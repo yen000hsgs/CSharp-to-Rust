@@ -177,20 +177,21 @@ you unambiguous feedback about what you just broke.
 ## Phase 2.5 — The differential harness (you own it)
 
 `tests/golden/cases.json` names a `csharp` and a `rust` entry point per case. The
-protocol is specified in `docs/contracts.md`, and the C# reference runner ships
-with the sample. **Nobody but
-you can build the Rust side**, and without it the parity verifier's differential
-pass cannot run at all — the C# names resolve, the Rust names dangle, and the
-pipeline silently loses its only C#-vs-Rust comparison.
+protocol is specified in `docs/contracts.md`, which is the only spec for both
+sides. **No agent in this pipeline owns the C# side** — it must be written
+against the original C# source, so the orchestrator supplies it as a runner
+command or the differential pass does not happen. Do not assume a C# runner
+exists in the repo and do not go looking for one to copy.
+
+**Nobody but you can build the Rust side**, and without it the parity verifier's
+differential pass cannot run at all — the C# names resolve, the Rust names
+dangle, and the pipeline silently loses its only C#-vs-Rust comparison.
 
 Build it alongside the crate:
 
 1. Add a `harness` binary target implementing the CLI and output envelope in
-   `docs/contracts.md` — **that document is the spec.** A C# runner may or may
-   not exist for this migration; it is an optional input the orchestrator hands
-   to the parity verifier, not something you can assume is sitting in the repo to
-   copy. Conform to the written protocol and the two sides will diff whenever the
-   C# side does turn up.
+   `docs/contracts.md` — **that document is the spec.** Conform to the written
+   protocol and the two sides will diff whenever the C# side does turn up.
 
    ```
    harness --cases <cases.json> [--out <results.json>]

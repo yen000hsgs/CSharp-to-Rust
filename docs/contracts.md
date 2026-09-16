@@ -8,30 +8,30 @@ the C# → Rust migration pipeline.
 > discover their inputs, do not call each other, and do not decide what happens
 > next. This document defines the *shape* of what is passed, not the routing.
 
-## Default run layout
+## Where things live
 
 The orchestrator may place artifacts anywhere and passes concrete paths at
-invocation time. When it does not specify a path, agents fall back to this
-layout:
+invocation time. When it does not specify a path, agents fall back to the layout
+in [Run layout](#run-layout) below, which is the single authoritative
+description — read it before writing any path, and do not infer the arrangement
+from examples elsewhere in this file.
 
-```
-artifacts/<run-id>/
-  document.json          # IN  - produced by the Requirement agent (upstream)
-  csharp/                # IN  - the original C# source under migration
-  tests/
-    manifest.json        # OUT - GenTest: test inventory + feature traceability
-    unit/*.rs            # OUT - GenTest: #[cfg(test)] modules
-    functional/*.rs      # OUT - GenTest: public-API tests (crate `tests/`)
-    e2e/*.rs             # OUT - GenTest: end-to-end tests
-    golden/cases.json    # OUT - GenTest: differential cases (C# vs Rust)
-  rust/                  # OUT - Code agent: the generated crate
-  reports/
-    parity-report.json   # OUT - Feature parity verifier
-    code-report.json     # OUT - Code agent
-```
+Ownership is narrow on purpose:
+
+| Path | Written by | Read-only to |
+| --- | --- | --- |
+| `document.json` | requirements agent (upstream) | all three agents |
+| `csharp/` | upstream | all three agents |
+| `tests/manifest.json`, all test sources, `tests/golden/cases.json` | GenTest | code agent, parity verifier |
+| `rust/` (the crate) | code agent | GenTest, parity verifier |
+| `reports/parity-report.json` | parity verifier | — |
+| `reports/code-report.json` | code agent | — |
 
 Agents MUST NOT write outside the outputs they were asked to produce. Tests are
 read-only to the Code agent. The Rust crate is read-only to GenTest.
+
+The C# differential harness is **not** in this table because none of these three
+agents owns it; see [the harness contract](#csharp-differential-harness).
 
 ## `document.json` — the intermediate spec
 
@@ -249,6 +249,8 @@ only executable if both names resolve, so they are derived mechanically from the
 | `csharp` | `Harness.` + each dot-segment in PascalCase | `Harness.Storage.Blob.Upload` |
 | `rust` | `harness::` + each dot-segment in snake_case | `harness::storage::blob::upload` |
 
+### C# differential harness
+
 **Ownership.** The **Code agent** owns the Rust side of the differential harness
 and must build it as part of the port. **No agent in this pipeline owns the C#
 side.** It has to be written against the original C# source, which is read-only
@@ -305,8 +307,9 @@ the case names would resolve on the C# side and dangle on the Rust side.
 ## Test file layout — cargo discovery
 
 The manifest's `file` paths are the addresses every gate resolves, so **no agent
-relocates a test file**. Cargo, however, only compiles top-level `.rs` files
-under `tests/`, so the nested layout needs an explicit inclusion mechanism:
+relocates a test file**. Every one of those paths is relative to the crate root
+`<run>/rust` (see [Run layout](#run-layout)). Cargo only compiles top-level `.rs`
+files under `tests/`, so a nested layout needs an explicit inclusion mechanism:
 
 | Tier | Where it runs | Who makes cargo see it |
 | --- | --- | --- |
@@ -316,18 +319,25 @@ under `tests/`, so the nested layout needs an explicit inclusion mechanism:
 A root wrapper is an ordinary Rust file containing nothing but includes:
 
 ```rust
-// tests/functional.rs
+// rust/tests/functional.rs
 #[path = "functional/storage_blob_upload.rs"] mod storage_blob_upload;
 ```
 
-The Code agent includes unit tests from the module under test:
+The Code agent includes unit tests from the module under test, with the `#[path]`
+relative to *that module's* file:
 
 ```rust
-// src/storage/blob.rs
+// rust/src/storage/blob.rs   (manifest file: src/storage/blob_tests.rs)
 #[cfg(test)]
-#[path = "../../tests/unit/storage_blob_upload.rs"]
-mod storage_blob_upload_tests;
+#[path = "blob_tests.rs"]
+mod blob_tests;
 ```
+
+Every included test function still needs its own `#[test]`. Both gates require a
+live `#[test]` attribute: a bare `fn`, an `#[ignore]`d test, or one behind
+`#[cfg(any())]` is reported as `phantom` by the coverage gate and as
+`unregistered_test` / `disabled_test` by the quality gate, because cargo would
+never run it.
 
 Both mechanisms leave the file exactly where the manifest says it is, so
 `Check-Coverage.ps1` still resolves it and the entry is not reported as a
@@ -471,6 +481,39 @@ exists to rule out, so `tools/Check-ParityReport.ps1` treats it as critical
 rather than as a note. The C# runner is an input the orchestrator supplies; when
 it is absent the differential is `skipped` and `substantive` is the ceiling.
 
+**The label is not the evidence; the outputs are.** The gate recomputes each
+case's verdict from the two recorded outputs rather than trusting `status`, so
+these rules are enforced, not merely requested:
+
+- `csharp` and `rust` are the **harness envelopes verbatim** — `{ "ok": true,
+  "value": ... }` or `{ "ok": false, "error": { "type", "message" } }`. A bare
+  value cannot distinguish a returned `4` from a thrown exception, and a failed
+  envelope with no `error.type` reduces parity to "both failed somehow".
+- Empty is not equal. A blank, absent or empty `csharp`/`rust`/`case_id`/`status`
+  is an absent observation and fails the level.
+- `status: match` requires the two envelopes to be **equal** (key order is not a
+  difference). A mislabelled match is a critical violation.
+- `status: mismatch` on two identical outputs is a violation too: a false
+  mismatch sends the Code agent chasing a divergence that does not exist.
+- `status: error` is a case that never ran, so it is incompatible with
+  `parity-checked`. Fix the harness and re-run, or drop the case and the level.
+- Normalization is the one honest reason unequal outputs match — and it must be
+  shown, not asserted. Record `normalization` (what rule was applied) plus
+  `normalized_csharp` and `normalized_rust`; the gate checks that the normalized
+  pair really is equal.
+
+```jsonc
+{
+  "case_id": "g_calculator_add_x3",
+  "csharp": { "ok": true, "value": "4.50" },
+  "rust":   { "ok": true, "value": "4.5" },
+  "status": "match",
+  "normalization": "decimal scale normalised before comparison",
+  "normalized_csharp": { "ok": true, "value": "4.5" },
+  "normalized_rust":   { "ok": true, "value": "4.5" }
+}
+```
+
 `required_tests` is the feedback channel that closes the loop. GenTest is best
 effort, so the verifier owns the coverage verdict and must return a work order
 precise enough to act on without re-deriving the analysis. A gap reported without
@@ -495,7 +538,17 @@ discard work that something still has to do:
 | `ruling` | Also required | Why |
 | --- | --- | --- |
 | `test_wrong` | `ref_id`, plus a `required_tests[]` entry for that same `ref_id` with `reason: incorrect_test` | Discarding the test leaves its requirement uncovered. Naming the requirement is what tells GenTest which test to correct. |
-| `document_wrong` | `route` | The defect is upstream; without a destination the finding stops here and the Code agent stays blocked. |
+| `code_wrong` | a `next_actions[]` entry with `agent: code` | The test was right; somebody has to change the code it caught. |
+| `document_wrong` | `route`, a `gaps[]` entry with `kind: document_gap`, and a `next_actions[]` entry with `agent: requirements` | The defect is upstream; without a destination the finding stops here and the Code agent stays blocked. Raising it as a gap is what makes it visible in the verdict rather than buried in the ruling. |
+| `rejected` | a `next_actions[]` entry with `agent: code` | Rejecting an escalation for missing evidence has to *ask for* the evidence, or the Code agent re-escalates the same thing next round. |
+
+**A ruling commissions work; it does not perform it.** At the moment the report
+is written the test is still wrong, the code is still blocked, and nothing has
+been re-run. So while any adjudication is outstanding the report may not claim
+`verdict: pass` or `pass_with_warnings`, and may not claim a `coverage_level`
+above `substantive`. Reporting success mid-repair is exactly how a loop
+terminates without converging. Report `fail` or `blocked`, let the correction
+land, and let the next round earn the level.
 
 `tools/Check-ParityReport.ps1` enforces all of this, including that the
 `required_tests` entry actually exists. Ruling a test wrong and emitting no work
@@ -672,6 +725,8 @@ test body named in the manifest and reports:
 | Finding | Severity | Meaning |
 | --- | --- | --- |
 | `unimplemented_test` | critical | Body is empty or only `todo!()`/`unimplemented!()`. |
+| `unregistered_test` | critical | The function carries no `#[test]` attribute. cargo never runs it, so it is not a test at all. |
+| `disabled_test` | critical | Marked `#[ignore]`, or gated on an always-false predicate such as `#[cfg(any())]`. Definitely not run. |
 | `no_assertion` | critical | No assertion macro; passes as long as nothing panics. |
 | `tautological_assertion` | critical | `assert!(true)`, `assert_eq!(x, x)` — cannot fail. |
 | `unchecked_error_path` | high | Covers an error requirement but never asserts an error or panic. An example whose documented `expected` is an `error` counts as an error requirement, whatever the manifest's `assertion_kind` says. |
@@ -692,6 +747,21 @@ undiscoverable (`not_analysed`, never a pass) and an `assert_eq!` that appears
 only inside a string literal does not count as an assertion. Blanking preserves
 every byte offset, so the literals an assertion genuinely passes — the expected
 values the `unbound_oracle` check reads — survive intact.
+
+**Only a test cargo would run is evidence.** Existing on disk is not enough: a
+bare `fn`, an `#[ignore]`d test and a `#[cfg(any())]` test all used to earn full
+coverage and count as substantive. Discovery now classifies every manifest entry
+as `registered`, `unregistered`, `disabled` or `unknown`, and only `registered`
+is analysed. A test gated on a predicate this gate cannot evaluate — a feature
+flag, a target predicate — is `unknown`: it lands in `not_analysed` and, like
+every other unknown, forces `substantive_eligible: false` rather than being
+resolved in the suite's favour. The coverage gate reports the same entries as
+`phantom` with the registration defect named in `reason`.
+
+Both gates share `tools/RustLex.ps1` for this. They used to disagree — the
+quality gate masked comments and strings while the coverage gate ran a raw regex
+over the file, so a function name written in a comment satisfied one and not the
+other. One implementation is the only way they stay agreed.
 
 ```powershell
 ./tools/Check-TestQuality.ps1 -DocumentPath artifacts/<run>/document.json `

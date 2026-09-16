@@ -194,9 +194,22 @@ you did not rule on.
 **A ruling that discards work must say who picks it up.** Striking a test out
 does not cover its requirement, so `test_wrong` without a `ref_id` and a matching
 `incorrect_test` work order reports success while the Code agent stays blocked on
-the same test — a loop that terminates without converging. Likewise
-`document_wrong` without a `route` leaves the defect with nowhere to go. The gate
-enforces both.
+the same test — a loop that terminates without converging. The other rulings
+carry the same obligation, and the gate enforces all four:
+
+| Ruling | Also emit |
+| --- | --- |
+| `test_wrong` | `ref_id` + a `required_tests[]` entry for it with `reason: incorrect_test` |
+| `code_wrong` | a `next_actions[]` entry with `agent: code` |
+| `document_wrong` | `route`, a `gaps[]` entry with `kind: document_gap`, and a `next_actions[]` entry with `agent: requirements` |
+| `rejected` | a `next_actions[]` entry with `agent: code` asking for the missing evidence |
+
+**Commissioning a repair is not the same as having repaired it.** When you write
+the report the test is still wrong, the code is still blocked, and nothing has
+been re-run — so while any adjudication is outstanding you may not report
+`verdict: pass` or `pass_with_warnings`, and `coverage_level` may not exceed
+`substantive`. Report `fail` or `blocked`, let the correction land, and let the
+next round earn the level back.
 
 A `test_wrong` ruling is the one case where GenTest is asked to **change an
 existing test rather than add one**. Say so explicitly in the entry, and keep the
@@ -266,6 +279,23 @@ reading can find.
    `mismatch` status must have its matching `mismatches[]` entry; the gate checks
    this, because a result table that records a divergence the report never raises
    is worse than no table.
+
+**Record the envelopes, not your reading of them.** `Check-ParityReport.ps1`
+recomputes each case's verdict from the two outputs, so the label you write is
+checked against them:
+
+- Copy each side's harness envelope verbatim — `{ "ok": true, "value": ... }` or
+  `{ "ok": false, "error": { "type", "message" } }`. Flattening it to a bare
+  value makes a returned `4` indistinguishable from a thrown exception and is
+  rejected.
+- A blank or empty `csharp`/`rust` is an absent observation, not an equal one.
+- If you applied a normalization to call unequal outputs equal, show it: record
+  `normalization`, `normalized_csharp` and `normalized_rust`. The gate checks the
+  normalized pair really is equal. An unexplained `match` over differing outputs
+  is a critical violation — the strongest claim in the pipeline earned on a
+  divergence.
+- `status: "error"` is a case that never ran; it is incompatible with
+  `parity-checked`. Fix the harness and re-run, or drop the case and the level.
 
 Compare error paths as well as happy paths: a C# `ArgumentException` that becomes
 a Rust panic is a `critical` mismatch even though both "fail".

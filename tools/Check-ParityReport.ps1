@@ -92,6 +92,35 @@ function Get-ListProp($Object, [string]$Name) {
     return @(@($value) | Where-Object { $null -ne $_ -and $_ -isnot [System.DBNull] })
 }
 
+function ConvertTo-Canonical($Value) {
+    # A stable string form so two outputs can be compared without trusting the
+    # label a report put on them. Object keys are sorted, so key order is not a
+    # difference; everything else is preserved exactly.
+    if ($null -eq $Value -or $Value -is [System.DBNull]) { return 'null' }
+    if ($Value -is [string]) { return '"' + $Value + '"' }
+    if ($Value -is [bool]) { return $(if ($Value) { 'true' } else { 'false' }) }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return '[' + ((@($Value) | ForEach-Object { ConvertTo-Canonical $_ }) -join ',') + ']'
+    }
+    if ($Value -is [pscustomobject]) {
+        $parts = @($Value.PSObject.Properties | Sort-Object Name |
+            ForEach-Object { '"' + $_.Name + '":' + (ConvertTo-Canonical $_.Value) })
+        return '{' + ($parts -join ',') + '}'
+    }
+    return [string]$Value
+}
+
+function Test-Populated($Value) {
+    # "Present" is not "populated". An empty string, an empty array and an object
+    # with no properties are all absences wearing a value's clothes, and each one
+    # used to satisfy a field check that the parity claim rests on.
+    if ($null -eq $Value -or $Value -is [System.DBNull]) { return $false }
+    if ($Value -is [string]) { return -not [string]::IsNullOrWhiteSpace($Value) }
+    if ($Value -is [pscustomobject]) { return @($Value.PSObject.Properties).Count -gt 0 }
+    if ($Value -is [System.Collections.IEnumerable]) { return @($Value).Count -gt 0 }
+    return $true
+}
+
 $report = Read-Json $ReportPath 'Parity report'
 
 
@@ -259,11 +288,13 @@ if ($coverageLevel -eq 'parity-checked') {
     foreach ($g in $golden) {
         $caseId = [string](Get-Prop $g 'case_id')
         $label = if ($caseId) { $caseId } else { '(unnamed case)' }
+        $complete = $true
         foreach ($field in 'case_id', 'csharp', 'rust', 'status') {
-            if ($null -eq (Get-Prop $g $field) -or (Get-Prop $g $field) -is [System.DBNull]) {
+            if (-not (Test-Populated (Get-Prop $g $field))) {
+                $complete = $false
                 Add-Violation 'inflated_level' 'critical' `
-                    "Golden result '$label' has no '$field'." `
-                    "A comparison needs both observed outputs and a verdict. Record case_id, csharp, rust and status (match | mismatch | error)."
+                    "Golden result '$label' has no usable '$field'." `
+                    "A comparison needs both observed outputs and a verdict. Record a non-empty case_id, csharp, rust and status (match | mismatch | error). An empty field is an absent observation, not an equal one."
             }
         }
         $status = [string](Get-Prop $g 'status')
@@ -271,6 +302,79 @@ if ($coverageLevel -eq 'parity-checked') {
             Add-Violation 'inflated_level' 'high' `
                 "Golden result '$label' has status '$status'." 'Use match | mismatch | error.'
         }
+
+        # An execution error is a comparison that did not happen. Letting one sit
+        # inside a parity-checked report is the same inflation as skipping the
+        # pass, just recorded case by case instead of all at once.
+        if ($status -eq 'error') {
+            Add-Violation 'inflated_level' 'critical' `
+                "Golden result '$label' records an execution error, yet coverage_level is 'parity-checked'." `
+                "A case that failed to run was never compared. Fix the harness and re-run it, or exclude the case and drop the level to 'substantive'."
+        }
+
+        # The harness protocol emits an envelope, not a bare value. A report that
+        # records `"4"` has already discarded the ok/error distinction, so a C#
+        # exception and a C# result of "4" become indistinguishable.
+        foreach ($side in 'csharp', 'rust') {
+            $obs = Get-Prop $g $side
+            if (-not (Test-Populated $obs)) { continue }
+            if ($obs -isnot [pscustomobject]) {
+                Add-Violation 'inflated_level' 'high' `
+                    "Golden result '$label' records '$side' as a bare value, not a result envelope." `
+                    'Record the harness envelope verbatim: { "ok": true, "value": ... } or { "ok": false, "error": { "type", "message" } }. A bare value cannot distinguish a returned result from a thrown error.'
+                continue
+            }
+            $ok = Get-Prop $obs 'ok'
+            if ($ok -isnot [bool]) {
+                Add-Violation 'inflated_level' 'high' `
+                    "Golden result '$label' has a '$side' envelope with no boolean 'ok'." `
+                    'Every harness result states whether the case completed. Without ok, a failure reads as a value.'
+            }
+            elseif (-not $ok) {
+                $err = Get-Prop $obs 'error'
+                if (-not (Test-Populated (Get-Prop $err 'type'))) {
+                    Add-Violation 'inflated_level' 'high' `
+                        "Golden result '$label' has a failed '$side' envelope with no error type." `
+                        'Record error.type so the two sides'' failures can be compared. "Both failed" is not parity.'
+                }
+            }
+        }
+
+        # The decisive change: the verdict is recomputed from the two outputs.
+        # Trusting `status` let a report pair C# "4" with Rust "5", label it a
+        # match, and earn the pipeline's strongest claim on a divergence.
+        if ($complete -and $status -in @('match', 'mismatch')) {
+            $cs = ConvertTo-Canonical (Get-Prop $g 'csharp')
+            $rs = ConvertTo-Canonical (Get-Prop $g 'rust')
+            $identical = ($cs -ceq $rs)
+
+            if (-not $identical -and $status -eq 'match') {
+                # Declared normalization is the one legitimate reason unequal raw
+                # outputs compare equal -- but it has to be shown, not asserted.
+                $norm = Get-Prop $g 'normalization'
+                $nc = Get-Prop $g 'normalized_csharp'
+                $nr = Get-Prop $g 'normalized_rust'
+                if ((Test-Populated $norm) -and (Test-Populated $nc) -and (Test-Populated $nr)) {
+                    if ((ConvertTo-Canonical $nc) -cne (ConvertTo-Canonical $nr)) {
+                        Add-Violation 'inflated_level' 'critical' `
+                            "Golden result '$label' claims a match under normalization, but the normalized outputs still differ ($(ConvertTo-Canonical $nc) vs $(ConvertTo-Canonical $nr))." `
+                            'Normalization must make the two sides equal. If it does not, the case is a mismatch.'
+                    }
+                }
+                else {
+                    Add-Violation 'inflated_level' 'critical' `
+                        "Golden result '$label' is labelled 'match' but the recorded outputs differ ($cs vs $rs)." `
+                        "The label is not the evidence; the outputs are. Report it as a mismatch, or -- if a declared normalization makes them equal -- record 'normalization', 'normalized_csharp' and 'normalized_rust' so the equality can be checked rather than believed."
+                }
+            }
+
+            if ($identical -and $status -eq 'mismatch') {
+                Add-Violation 'inflated_level' 'high' `
+                    "Golden result '$label' is labelled 'mismatch' but both sides recorded $cs." `
+                    'Identical outputs are a match. A false mismatch sends the Code agent chasing a divergence that does not exist.'
+            }
+        }
+
         # Otherwise a run can record a differing pair, call it a match, and the
         # mismatch never reaches the summary the orchestrator reads.
         if ($status -eq 'mismatch' -and -not $mismatchCases.ContainsKey($caseId)) {
@@ -338,6 +442,12 @@ if ($verdict -in @('pass', 'pass_with_warnings')) {
 # agent, so it runs unconditionally.
 $adjudicated = @{}
 $incorrectTestOrders = @{}
+$outstanding = [System.Collections.Generic.List[string]]::new()
+$actionAgents = @{}
+foreach ($na in $nextActions) {
+    $ag = [string](Get-Prop $na 'agent')
+    if ($ag) { $actionAgents[$ag] = $true }
+}
 foreach ($rt in $requiredTests) {
     if ([string](Get-Prop $rt 'reason') -ne 'incorrect_test') { continue }
     $rid = [string](Get-Prop $rt 'ref_id')
@@ -387,6 +497,53 @@ foreach ($a in $adjudications) {
         Add-Violation 'adjudication' 'high' `
             "Adjudication rules '$tid' document_wrong but names no route for the correction." `
             "Set route to the owner of the fix (requirements | gentest). A document defect nobody is asked to fix recurs every round."
+    }
+
+    # Each ruling commissions a specific correction. Naming the culprit without
+    # dispatching the repair leaves the finding with nowhere to go, and the same
+    # conflict arrives again next round wearing the same evidence.
+    if ($ruling -eq 'code_wrong' -and -not $actionAgents.ContainsKey('code')) {
+        Add-Violation 'adjudication' 'high' `
+            "Adjudication rules '$tid' code_wrong but no next_actions entry directs the Code agent to fix it." `
+            "Add a next_actions entry with agent 'code' naming the behaviour to correct."
+    }
+    if ($ruling -eq 'document_wrong') {
+        $hasDocGap = @($gaps | Where-Object { (Get-Prop $_ 'kind') -eq 'document_gap' }).Count -gt 0
+        if (-not $hasDocGap) {
+            Add-Violation 'adjudication' 'high' `
+                "Adjudication rules '$tid' document_wrong but the report raises no document_gap." `
+                "A document defect is a gap against the requirements agent. Raise it with kind 'document_gap' so it is visible in the verdict, not only in the ruling."
+        }
+        if (-not $actionAgents.ContainsKey('requirements')) {
+            Add-Violation 'adjudication' 'high' `
+                "Adjudication rules '$tid' document_wrong but no next_actions entry routes it to the requirements agent." `
+                "Add a next_actions entry with agent 'requirements'. Neither GenTest nor the Code agent may invent the missing rule."
+        }
+    }
+    if ($ruling -eq 'rejected' -and -not $actionAgents.ContainsKey('code')) {
+        Add-Violation 'adjudication' 'high' `
+            "Adjudication rejects '$tid' for missing evidence but asks nobody for it." `
+            "Add a next_actions entry with agent 'code' requesting the document_says and csharp_does the entry lacked."
+    }
+
+    # A commissioned correction is work that has not happened yet. While one is
+    # outstanding the run is mid-repair, so it cannot also be a stopping point --
+    # reporting success here is how a loop terminates without converging.
+    if ($ruling -in @('test_wrong', 'code_wrong', 'document_wrong', 'rejected')) {
+        $outstanding.Add($tid) | Out-Null
+    }
+}
+
+if ($outstanding.Count -gt 0) {
+    if ($verdict -in @('pass', 'pass_with_warnings')) {
+        Add-Violation 'verdict' 'critical' `
+            "verdict is '$verdict' while $($outstanding.Count) adjudicated test(s) still await correction: $($outstanding -join ', ')." `
+            "An adjudication commissions work; it does not perform it. The test is still wrong, the code is still blocked, and nothing has been re-run. Report 'fail' or 'blocked' until the correction lands and the suite is re-verified."
+    }
+    if ($coverageLevel -in @('proven', 'parity-checked')) {
+        Add-Violation 'inflated_level' 'critical' `
+            "coverage_level is '$coverageLevel' while $($outstanding.Count) adjudicated test(s) still await correction." `
+            "A suite with a known-wrong test has not established anything above 'substantive' for the requirement that test covers. Downgrade until the correction is made and re-verified."
     }
 }
 

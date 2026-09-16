@@ -75,17 +75,27 @@ costliest failure in the pipeline — it tells the orchestrator to stop looping
 while requirements are still unproven, and the run ends believing it succeeded.
 
 ```powershell
+# Manifest `file` paths are crate-relative, so -TestsRoot is the crate root.
+# Omit it and correctly-placed test files are reported as phantoms.
 ./tools/Check-Coverage.ps1     -DocumentPath tools/testdata/calculator-document.json `
-                               -ManifestPath artifacts/<run>/tests/manifest.json
+                               -ManifestPath artifacts/<run>/tests/manifest.json `
+                               -TestsRoot artifacts/<run>/rust
 ./tools/Check-TestQuality.ps1  -DocumentPath tools/testdata/calculator-document.json `
-                               -ManifestPath artifacts/<run>/tests/manifest.json
+                               -ManifestPath artifacts/<run>/tests/manifest.json `
+                               -TestsRoot artifacts/<run>/rust
 ./tools/Check-ParityReport.ps1 -ReportPath artifacts/<run>/reports/parity-report.json `
-                               -CodeReportPath artifacts/<run>/reports/code-report.json
+                               -CodeReportPath artifacts/<run>/reports/code-report.json `
+                               -ManifestPath artifacts/<run>/tests/manifest.json
 
 ./tools/Test-CoverageGate.ps1   # self-test the gates themselves
 ./tools/Test-TestQuality.ps1
 ./tools/Test-ParityReport.ps1
 ```
+
+See [`docs/contracts.md`](docs/contracts.md#run-layout) for the run layout the
+paths above assume, and for the C# differential harness contract — the harness is
+an optional orchestrator-supplied input, not something any of these three agents
+builds.
 
 The verifier reports `coverage_level` (`counted` → `substantive` → `proven` →
 `parity-checked`) so a weak claim can never read as a strong one, and emits

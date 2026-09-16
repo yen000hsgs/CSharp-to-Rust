@@ -118,6 +118,25 @@ Assert 'clean' 'exit code' 0 $r.ExitCode
 Assert 'clean' 'verdict' 'pass' $r.Report.verdict
 Assert 'clean' 'covered' $allIds.Count $r.Report.summary.requirements_covered
 
+# --- 1b. a function cargo never runs is not coverage --------------------------
+# The gate used to regex the raw file for the function name: a plain `fn`, a
+# #[cfg(any())] test and a name written in a comment all satisfied it. Discovery
+# is now shared with the quality gate, which requires a live #[test].
+$cleanRust = Get-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Raw -Encoding UTF8
+$degraded = $cleanRust `
+    -replace "#\[test\]\r?\nfn covers_req_1\(\)", "fn covers_req_1()" `
+    -replace "#\[test\]\r?\nfn covers_req_2\(\)", "#[cfg(any())]`n#[test]`nfn covers_req_2()" `
+    -replace "#\[test\]\r?\nfn covers_req_3\(\)", "// fn covers_req_3() lives in a comment`n#[test]`nfn other_name_3()"
+Set-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Value $degraded -Encoding UTF8
+
+$r = Invoke-Gate $root $DocumentPath
+Assert 'unrunnable' 'exit code' 1 $r.ExitCode
+Assert 'unrunnable' 'phantom' 3 $r.Report.summary.phantom
+Assert 'unrunnable' 'reason names the registration defect' $true `
+    (@($r.Report.phantom | Where-Object { $_.reason -match 'no #\[test\]|always false' }).Count -eq 2)
+
+Set-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Value $cleanRust -Encoding UTF8
+
 # --- 2. dishonest ------------------------------------------------------------
 # Drop the last requirement (MISSING), point one test at a nonexistent fn
 # (PHANTOM), add a typo'd id (DANGLING), and overstate the claim (MISCLAIM).

@@ -79,241 +79,9 @@ function Get-Prop($Object, [string]$Name) {
     return $null
 }
 
-# Scan forward from an opening brace/paren to its match, skipping over string
-# literals, raw strings, char literals and comments so that braces inside them
-# don't count.
-function Get-BalancedSpan([string]$Text, [int]$OpenIndex, [char]$Open, [char]$Close) {
-    $depth = 0
-    $i = $OpenIndex
-    $n = $Text.Length
-    $isIdent = { param([int]$k) $k -ge 0 -and $k -lt $n -and ($Text[$k] -match '[A-Za-z0-9_]') }
-
-    while ($i -lt $n) {
-        $c = $Text[$i]
-        if ($c -eq '/' -and $i + 1 -lt $n) {
-            if ($Text[$i + 1] -eq '/') {
-                while ($i -lt $n -and $Text[$i] -ne "`n") { $i++ }
-                continue
-            }
-            if ($Text[$i + 1] -eq '*') {
-                # Rust block comments nest: /* a /* b */ still open */
-                $cdepth = 0
-                while ($i + 1 -lt $n) {
-                    if ($Text[$i] -eq '/' -and $Text[$i + 1] -eq '*') { $cdepth++; $i += 2; continue }
-                    if ($Text[$i] -eq '*' -and $Text[$i + 1] -eq '/') {
-                        $cdepth--; $i += 2
-                        if ($cdepth -le 0) { break }
-                        continue
-                    }
-                    $i++
-                }
-                if ($i + 1 -ge $n) { $i = $n }
-                continue
-            }
-        }
-
-        # Raw / byte string prefixes: r"", r#""#, b"", br#""#. Only when the
-        # prefix does not continue an identifier (so `for_r` is not a prefix).
-        if (($c -eq 'r' -or $c -eq 'b') -and -not (& $isIdent ($i - 1))) {
-            $j = $i
-            if ($Text[$j] -eq 'b' -and $j + 1 -lt $n -and $Text[$j + 1] -eq 'r') { $j++ }
-            if ($Text[$j] -eq 'r') {
-                $j++
-                $hashes = 0
-                while ($j -lt $n -and $Text[$j] -eq '#') { $hashes++; $j++ }
-                if ($j -lt $n -and $Text[$j] -eq '"') {
-                    $terminator = '"' + ('#' * $hashes)
-                    $end = $Text.IndexOf($terminator, $j + 1)
-                    $i = if ($end -lt 0) { $n } else { $end + $terminator.Length }
-                    continue
-                }
-            }
-            elseif ($Text[$i] -eq 'b' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '"') {
-                $i++   # fall through to the ordinary string scanner below
-                $c = $Text[$i]
-            }
-        }
-
-        if ($c -eq '"') {
-            $i++
-            while ($i -lt $n) {
-                if ($Text[$i] -eq '\') { $i += 2; continue }
-                if ($Text[$i] -eq '"') { break }
-                $i++
-            }
-            $i++
-            continue
-        }
-        if ($c -eq "'") {
-            # Could be a char literal or a lifetime. A char literal is 'x',
-            # '\n', '\'' or '\u{1F600}'; a lifetime is 'a followed by a
-            # non-quote. Measure the literal explicitly instead of guessing a
-            # window, so '}' and ')' cannot leak into the balance count.
-            $j = $i + 1
-            if ($j -lt $n -and $Text[$j] -eq '\') {
-                $j++
-                if ($j -lt $n -and $Text[$j] -eq 'u') {
-                    $close = $Text.IndexOf('}', $j)
-                    $j = if ($close -lt 0) { $n } else { $close + 1 }
-                }
-                else { $j++ }
-            }
-            elseif ($j -lt $n) { $j++ }
-            if ($j -lt $n -and $Text[$j] -eq "'") { $i = $j + 1; continue }
-            $i++   # a lifetime: nothing to skip
-            continue
-        }
-        if ($c -eq $Open) { $depth++ }
-        elseif ($c -eq $Close) {
-            $depth--
-            if ($depth -eq 0) { return @{ Start = $OpenIndex; End = $i } }
-        }
-        $i++
-    }
-    return $null
-}
-
-# Blank out everything that is not executable Rust, preserving every index so
-# offsets found in a mask address the same character in the original text.
-# Without this, a `fn` inside a comment is discovered as a test and an
-# `assert_eq!` inside a string literal counts as an assertion -- prose passes as
-# evidence. Comments are always masked; -MaskStrings additionally blanks string
-# and char *contents*, keeping the delimiters so brace/paren balance is intact.
-function ConvertTo-MaskedRust([string]$Text, [switch]$MaskStrings) {
-    $n = $Text.Length
-    $buf = $Text.ToCharArray()
-    $blank = {
-        param([int]$From, [int]$To)
-        for ($k = [Math]::Max($From, 0); $k -lt $To -and $k -lt $n; $k++) {
-            if ($buf[$k] -ne "`n" -and $buf[$k] -ne "`r") { $buf[$k] = ' ' }
-        }
-    }
-    $isIdent = { param([int]$k) $k -ge 0 -and $k -lt $n -and ($Text[$k] -match '[A-Za-z0-9_]') }
-
-    $i = 0
-    while ($i -lt $n) {
-        $c = $Text[$i]
-
-        if ($c -eq '/' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '/') {
-            $end = $Text.IndexOf("`n", $i)
-            if ($end -lt 0) { $end = $n }
-            & $blank $i $end
-            $i = $end
-            continue
-        }
-        if ($c -eq '/' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '*') {
-            $start = $i
-            $cdepth = 0
-            while ($i + 1 -lt $n) {
-                if ($Text[$i] -eq '/' -and $Text[$i + 1] -eq '*') { $cdepth++; $i += 2; continue }
-                if ($Text[$i] -eq '*' -and $Text[$i + 1] -eq '/') {
-                    $cdepth--; $i += 2
-                    if ($cdepth -le 0) { break }
-                    continue
-                }
-                $i++
-            }
-            if ($i + 1 -ge $n) { $i = $n }
-            & $blank $start $i
-            continue
-        }
-
-        # Raw / byte strings: r"", r#".."#, b"", br#".."#. Only when the prefix
-        # does not continue an identifier, so `for_r` is not read as a prefix.
-        if (($c -eq 'r' -or $c -eq 'b') -and -not (& $isIdent ($i - 1))) {
-            $j = $i
-            if ($Text[$j] -eq 'b' -and $j + 1 -lt $n -and $Text[$j + 1] -eq 'r') { $j++ }
-            if ($Text[$j] -eq 'r') {
-                $j++
-                $hashes = 0
-                while ($j -lt $n -and $Text[$j] -eq '#') { $hashes++; $j++ }
-                if ($j -lt $n -and $Text[$j] -eq '"') {
-                    $terminator = '"' + ('#' * $hashes)
-                    $end = $Text.IndexOf($terminator, $j + 1)
-                    $contentEnd = if ($end -lt 0) { $n } else { $end }
-                    if ($MaskStrings) { & $blank ($j + 1) $contentEnd }
-                    $i = if ($end -lt 0) { $n } else { $end + $terminator.Length }
-                    continue
-                }
-            }
-            elseif ($Text[$i] -eq 'b' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '"') {
-                $i++
-                $c = $Text[$i]
-            }
-        }
-
-        if ($c -eq '"') {
-            $start = $i + 1
-            $i++
-            while ($i -lt $n) {
-                if ($Text[$i] -eq '\') { $i += 2; continue }
-                if ($Text[$i] -eq '"') { break }
-                $i++
-            }
-            if ($MaskStrings) { & $blank $start ([Math]::Min($i, $n)) }
-            $i++
-            continue
-        }
-        if ($c -eq "'") {
-            # A char literal ('x', '\n', '\u{1F600}') or a lifetime ('a). Measure
-            # it explicitly rather than guessing a window.
-            $j = $i + 1
-            if ($j -lt $n -and $Text[$j] -eq '\') {
-                $j++
-                if ($j -lt $n -and $Text[$j] -eq 'u') {
-                    $close = $Text.IndexOf('}', $j)
-                    $j = if ($close -lt 0) { $n } else { $close + 1 }
-                }
-                else { $j++ }
-            }
-            elseif ($j -lt $n) { $j++ }
-            if ($j -lt $n -and $Text[$j] -eq "'") {
-                if ($MaskStrings) { & $blank ($i + 1) $j }
-                $i = $j + 1
-                continue
-            }
-            $i++   # a lifetime: nothing to mask
-            continue
-        }
-        $i++
-    }
-    return (-join $buf)
-}
-
-# $ScanText has comments and string contents blanked, so discovery cannot match
-# prose; $CodeText has only comments blanked, so extracted bodies keep the string
-# literals a test legitimately asserts against. Indices are identical in both.
-function Get-TestSource([string]$ScanText, [string]$CodeText, [string]$Fn) {
-    $Text = $ScanText
-    $m = [regex]::Match($Text, "(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+" + [regex]::Escape($Fn) + "(?:\s*<[^>]*>)?\s*\(")
-    if (-not $m.Success) { return $null }
-
-    # Walk backwards over contiguous attribute lines so #[should_panic] is
-    # visible. Comment lines are blank in the scan text, so a whitespace-only
-    # line is treated as a continuation rather than a stop.
-    $lineStart = $Text.LastIndexOf("`n", [Math]::Max($m.Index - 1, 0)) + 1
-    $attrStart = $lineStart
-    while ($attrStart -gt 0) {
-        $prevEnd = $Text.LastIndexOf("`n", $attrStart - 2)
-        $prevStart = $prevEnd + 1
-        if ($prevStart -lt 0) { break }
-        $line = $Text.Substring($prevStart, $attrStart - $prevStart).Trim()
-        if ($line.StartsWith('#[') -or $line -eq '') { $attrStart = $prevStart } else { break }
-    }
-
-    $brace = $Text.IndexOf('{', $m.Index)
-    if ($brace -lt 0) { return [pscustomobject]@{ Unparsable = $true } }
-    $span = Get-BalancedSpan $Text $brace '{' '}'
-    if (-not $span) { return [pscustomobject]@{ Unparsable = $true } }
-
-    return [pscustomobject]@{
-        Unparsable = $false
-        Attributes = $Text.Substring($attrStart, $lineStart - $attrStart)
-        Body       = $CodeText.Substring($span.Start + 1, $span.End - $span.Start - 1)
-        ScanBody   = $Text.Substring($span.Start + 1, $span.End - $span.Start - 1)
-        Line       = ($Text.Substring(0, $m.Index) -split "`n").Count
-    }
-}
+# Discovery and lexing are shared with Check-Coverage.ps1 so the two gates agree
+# on what counts as a real, registered, enabled test.
+. (Join-Path $PSScriptRoot 'RustLex.ps1')
 
 # Extract the argument text of every assertion macro call in a body. Macros are
 # located in the scan body (so `"assert_eq!(1, 1)"` inside a string is not one),
@@ -514,6 +282,31 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
     # unknown must never be promoted to `substantive`.
     if ($src.Unparsable) {
         Add-NotAnalysed $testId $file "function '$fn' found but its body could not be parsed by this scanner"
+        continue
+    }
+
+    # A function cargo never runs is not evidence of anything. This used to be
+    # invisible: a bare `fn` or a #[cfg(any())] test earned full coverage and
+    # `substantive_eligible: true` without ever executing.
+    $reg = Get-TestRegistration $src.Attributes
+    if ($reg.State -eq 'unregistered') {
+        Add-Finding $testId $file $src.Line 'unregistered_test' 'critical' `
+            "'$fn' is listed as a test but $($reg.Reason)." `
+            $covers `
+            "Add #[test] (inside a #[cfg(test)] mod for a unit test), or remove the manifest entry. Until then every requirement it claims is untested."
+        Add-NotAnalysed $testId $file $reg.Reason
+        continue
+    }
+    if ($reg.State -eq 'disabled') {
+        Add-Finding $testId $file $src.Line 'disabled_test' 'critical' `
+            "'$fn' is listed as a test but $($reg.Reason)." `
+            $covers `
+            'Enable the test, or remove the manifest entry and record the requirement as uncovered. A test that does not run proves nothing.'
+        Add-NotAnalysed $testId $file $reg.Reason
+        continue
+    }
+    if ($reg.State -eq 'unknown') {
+        Add-NotAnalysed $testId $file $reg.Reason
         continue
     }
 

@@ -42,7 +42,7 @@
         { "id": "calculator.add.b3", "statement": "Adding zero returns the other operand unchanged." }
       ],
       "errors": [
-        { "id": "calculator.add.e1", "condition": "the sum, after rounding to decimal's 28-29 significant digits, is outside the decimal range; an excess that vanishes under that rounding returns decimal.MaxValue instead of throwing, so decimal.MaxValue + 0.1 is MaxValue while decimal.MaxValue + 1 throws", "result": "OverflowException" }
+        { "id": "calculator.add.e1", "condition": "the sum cannot be represented as a 96-bit coefficient at any scale from the operands' scale down to 0. The addends are first aligned to a common scale, reducing it (with rounding to nearest, ties away from zero) until both fit; an excess that vanishes under that reduction returns decimal.MaxValue rather than throwing, so decimal.MaxValue + 0.1 is MaxValue while decimal.MaxValue + 1 throws", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.add.i1", "statement": "Decimal precision is preserved exactly: 0.1 + 0.2 is 0.3, not a binary-float approximation of it." }
@@ -72,7 +72,7 @@
         { "id": "calculator.subtract.b3", "statement": "Subtracting two negative operands follows ordinary signed arithmetic." }
       ],
       "errors": [
-        { "id": "calculator.subtract.e1", "condition": "the difference, after rounding to decimal's 28-29 significant digits, is outside the decimal range; an excess that vanishes under that rounding returns the boundary value instead of throwing", "result": "OverflowException" }
+        { "id": "calculator.subtract.e1", "condition": "the difference cannot be represented as a 96-bit coefficient at any scale from the operands' scale down to 0; as with addition the operands are aligned with rounding to nearest, ties away from zero, so an excess that vanishes under that reduction returns the boundary value rather than throwing", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.subtract.i1", "statement": "Fractional operands keep their exact scale: 3.75 - 2.5 is 1.25." }
@@ -102,10 +102,10 @@
         { "id": "calculator.multiply.b3", "statement": "The sign of the result follows the signs of the operands." }
       ],
       "errors": [
-        { "id": "calculator.multiply.e1", "condition": "the product, after rounding to decimal's 28-29 significant digits, is outside the decimal range; a product too small to represent rounds to 0 rather than throwing", "result": "OverflowException" }
+        { "id": "calculator.multiply.e1", "condition": "the product cannot be represented even after reducing its scale to 0 -- that is, its integer part needs more than a 96-bit coefficient (decimal.MaxValue * 1.1 throws, while decimal.MaxValue * 1.0 does not). A product too small to represent does not throw: it rounds to 0", "result": "OverflowException" }
       ],
       "invariants": [
-        { "id": "calculator.multiply.i1", "statement": "The scale of the product is the sum of the operand scales while that total fits decimal's 28-29 significant digits: 1.25 * 2.5 is 3.125. Beyond it the result is rounded to nearest rather than kept exactly, so a product of two sufficiently small operands (1e-28 * 1e-28) rounds to 0 instead of overflowing or preserving scale." }
+        { "id": "calculator.multiply.i1", "statement": "A decimal is a 96-bit unsigned coefficient scaled by a power of ten, with the scale constrained to 0-28; these are two independent limits and either one can force rounding. The product's ideal scale is the sum of the operand scales (1.25 * 2.5 is exactly 3.125, scale 3). When the exact product would need a coefficient wider than 96 bits, the scale is reduced -- rounding the value to nearest, ties away from zero -- until the coefficient fits, even if the reduced scale is far below the sum: decimal.MaxValue * 0.11 has operand scales summing to 2 but returns 8715097876569077135289834537 at scale 0. When the ideal scale exceeds 28 the result is rounded to scale 28 instead, which is why 1e-28 * 1e-28 returns 0 rather than overflowing or preserving scale. Only when no scale down to 0 admits a representable coefficient does the operation throw." }
       ],
       "examples": [
         { "id": "calculator.multiply.x1", "input": { "left": "4", "right": "3" }, "expected": "12" },
@@ -134,7 +134,7 @@
       ],
       "errors": [
         { "id": "calculator.divide.e1", "condition": "divisor is zero, for any dividend including zero and negatives", "result": "DivideByZeroException with message 'Cannot divide by zero.'" },
-        { "id": "calculator.divide.e2", "condition": "the quotient, after rounding to decimal's 28-29 significant digits, is outside the decimal range, such as decimal.MaxValue / 0.1", "result": "OverflowException" }
+        { "id": "calculator.divide.e2", "condition": "the quotient's integer part needs more than a 96-bit coefficient, so no scale down to 0 can represent it, such as decimal.MaxValue / 0.1", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.divide.i1", "statement": "The zero-divisor check precedes the division, so the operation never relies on hardware division-by-zero behaviour." }

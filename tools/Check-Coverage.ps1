@@ -54,6 +54,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Test discovery is shared with Check-TestQuality.ps1 so the two gates cannot
+# disagree about what counts as a real, registered, enabled test.
+. (Join-Path $PSScriptRoot 'RustLex.ps1')
 $script:schemaViolation = $false
 
 function Read-Json([string]$Path, [string]$Label) {
@@ -242,6 +246,7 @@ if ($script:schemaViolation) {
 
 $covered = @{}                 # ref_id -> list of test_id
 $phantom = [System.Collections.Generic.List[object]]::new()
+$unverified = [System.Collections.Generic.List[object]]::new()
 $dangling = [System.Collections.Generic.List[object]]::new()
 $testFileCache = @{}
 
@@ -269,29 +274,65 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
     $resolved = Resolve-TestPath $TestsRoot $file
     $exists = [bool]($resolved -and (Test-Path -LiteralPath $resolved))
     $fnFound = $false
+    $notRunReason = ''
+    $unknownReason = ''
 
     if ($exists -and $fn) {
         if (-not $testFileCache.ContainsKey($resolved)) {
-            $testFileCache[$resolved] = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8
+            $raw = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8
+            $testFileCache[$resolved] = [pscustomobject]@{
+                Code = ConvertTo-MaskedRust $raw
+                Scan = ConvertTo-MaskedRust $raw -MaskStrings
+            }
         }
-        $fnFound = $testFileCache[$resolved] -match ("(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+" + [regex]::Escape($fn) + "(?:\s*<[^>]*>)?\s*\(")
+        $cached = $testFileCache[$resolved]
+        # Shared with the quality gate. The old raw regex matched a function name
+        # written in a comment, and never asked whether the function was a test.
+        $src = Get-TestSource $cached.Scan $cached.Code $fn
+        if ($src -and -not $src.Unparsable) {
+            $reg = Get-TestRegistration $src.Attributes
+            switch ($reg.State) {
+                'registered' { $fnFound = $true }
+                'unknown'    { $fnFound = $true; $unknownReason = $reg.Reason }
+                default      { $notRunReason = $reg.Reason }
+            }
+        }
+        elseif ($src) { $fnFound = $true }
     }
 
     if (-not $exists -or -not $fnFound) {
+        $reason = if (-not $exists) {
+            if ($resolved) { 'file does not exist' } else { 'file path is missing or escapes the tests root' }
+        }
+        elseif ($notRunReason) { $notRunReason }
+        else { 'function not found in file' }
         $phantom.Add([pscustomobject]@{
             test_id = $testId
             file    = $file
             test_fn = $fn
-            reason  = if (-not $exists) { if ($resolved) { 'file does not exist' } else { 'file path is missing or escapes the tests root' } } else { 'function not found in file' }
+            reason  = $reason
             covers  = @(Get-Prop $test 'covers')
             required_assertion = if (-not $exists) {
                 "Manifest entry '$testId' points at '$file', which does not resolve under the tests root. Either create the file or correct the path; until then every requirement it claims is untested."
-            } else {
+            }
+            elseif ($notRunReason) {
+                "Manifest entry '$testId' names '$fn', but $notRunReason. A function cargo never runs covers nothing. Register or enable it, or drop the entry and report the requirement as uncovered."
+            }
+            else {
                 "File '$file' exists but contains no function '$fn'. Implement it, or correct the manifest's test_fn to the real function name."
             }
         })
         # A phantom test grants no coverage.
         continue
+    }
+
+    # A test whose cfg predicate cannot be evaluated here may or may not run. It
+    # is credited so the requirement is not double-reported, but the uncertainty
+    # is surfaced rather than silently resolved in the suite's favour.
+    if ($unknownReason) {
+        $unverified.Add([pscustomobject]@{
+            test_id = $testId; file = $file; test_fn = $fn; reason = $unknownReason
+        })
     }
 
     # A feature is an envelope, not a requirement a test names in `covers`.
@@ -462,12 +503,14 @@ $report = [pscustomobject]@{
         missing              = $missing.Count
         waived               = $waived.Count
         phantom              = $phantom.Count
+        unverified_discovery = $unverified.Count
         dangling             = $dangling.Count
         required_tests       = $requiredTests.Count
     }
     missing  = $missing
     waived   = $waived
     phantom  = $phantom
+    unverified_discovery = $unverified
     dangling = $dangling
     misclaim = $misclaim
     required_tests = $requiredTests

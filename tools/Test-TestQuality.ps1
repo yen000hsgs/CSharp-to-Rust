@@ -201,6 +201,36 @@ fn bad_oracle_outside_assertion() {
     let item = add("widget-1", 3, "19.99");
     assert_ne!(item.quantity, 0);
 }
+
+// An ordinary function. cargo never runs it, but it used to earn full coverage
+// and count as substantive evidence purely by existing.
+fn bad_unregistered_fn() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+#[cfg(any())]
+#[test]
+fn bad_cfg_disabled() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+#[test]
+#[ignore]
+fn bad_ignored_test() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+// Gated on a predicate this gate cannot evaluate: it may or may not run, which
+// is an UNKNOWN and must not be promoted to proof.
+#[cfg(feature = "slow")]
+#[test]
+fn unknown_cfg_test() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
 '@
 # `good_should_panic_test` needs its attribute injected without the here-string
 # swallowing it as a comment line.
@@ -243,6 +273,10 @@ function New-Test([string]$id, [string]$fn, [string[]]$covers) {
         New-Test 't_err_constructed' 'bad_err_constructed_not_asserted' @('demo.add.e1')
         New-Test 't_oracle_outside'  'bad_oracle_outside_assertion'     @('demo.add.x1')
         New-Test 't_phantom'         'no_such_function'        @('demo.add.b1')
+        New-Test 't_unregistered'    'bad_unregistered_fn'     @('demo.add.b1')
+        New-Test 't_cfg_disabled'    'bad_cfg_disabled'        @('demo.add.b1')
+        New-Test 't_ignored'         'bad_ignored_test'        @('demo.add.b1')
+        New-Test 't_unknown_cfg'     'unknown_cfg_test'        @('demo.add.b1')
     )
     coverage_claim = [pscustomobject]@{ requirements_total = 5; requirements_covered = 5; waived = @() }
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $work 'tests\manifest.json') -Encoding UTF8
@@ -292,7 +326,7 @@ Write-Host "Test quality gate self-test`n"
 Assert 'exit code' 1 $exit
 Assert 'verdict' 'fail' $report.verdict
 Assert 'tests analysed' 21 $report.summary.tests_analysed
-Assert 'tests skipped (phantom)' 3 $report.summary.tests_not_analysed
+Assert 'tests skipped (phantom)' 7 $report.summary.tests_not_analysed
 
 Write-Host "`n  Defects that must be caught:"
 Assert-Finding 't_unimplemented'   'unimplemented_test'
@@ -313,6 +347,16 @@ Assert-Finding 't_oracle_outside'  'unbound_oracle'
 # is not a test, and an assertion inside a string literal never runs.
 Assert-Not-Analysed 't_commented'
 Assert-Not-Analysed 't_block_commented'
+
+# A function cargo never runs is not evidence. Each of these used to earn full
+# coverage and `substantive_eligible: true` purely by existing on disk.
+Assert-Not-Analysed 't_unregistered'
+Assert-Not-Analysed 't_cfg_disabled'
+Assert-Not-Analysed 't_ignored'
+Assert-Not-Analysed 't_unknown_cfg'
+Assert-Finding 't_unregistered' 'unregistered_test'
+Assert-Finding 't_cfg_disabled' 'disabled_test'
+Assert-Finding 't_ignored' 'disabled_test'
 Assert-Finding 't_stringly'        'no_assertion'
 
 # An example documented to fail is an error requirement, whatever its kind says.

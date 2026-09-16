@@ -173,6 +173,65 @@ $doc.required_tests += [ordered]@{
 $r = Invoke-Validator $doc $codeReport
 Assert "adjudicated: no adjudication violation" (-not (Has-Check $r.Result 'adjudication'))
 
+# An adjudication commissions work; it does not perform it. While the correction
+# is outstanding the run is mid-repair, so it is neither a pass nor 'proven'.
+$doc.verdict = 'pass'
+$doc.gaps = @()
+$doc.summary = [ordered]@{ gaps = 0; mismatches = 0 }
+$r = Invoke-Validator $doc $codeReport
+Assert "outstanding-correction: exit code = 1" ($r.Exit -eq 1)
+Assert "outstanding-correction: verdict raised" (Has-Check $r.Result 'verdict')
+Assert "outstanding-correction: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# Each ruling has to dispatch its own repair, not merely name a culprit.
+$doc = New-CleanReport
+$doc.adjudications = @(
+    [ordered]@{
+        test_id = 't_demo_add_b1'; ruling = 'code_wrong'
+        evidence = 'Demo.cs#L10-L12 returns a + b; the Rust port returns a - b.'
+    }
+)
+$doc.next_actions = @()
+$r = Invoke-Validator $doc $codeReport
+Assert "code_wrong-undispatched: adjudication raised" (Has-Check $r.Result 'adjudication')
+
+$doc.next_actions = @([ordered]@{ agent = 'code'; action = 'Correct add to return a + b.' })
+$r = Invoke-Validator $doc $codeReport
+Assert "code_wrong-dispatched: no adjudication violation" (-not (Has-Check $r.Result 'adjudication'))
+
+# A document defect nobody is asked to fix recurs every round, and it has to be
+# visible in the verdict rather than buried in the ruling.
+$doc = New-CleanReport
+$doc.adjudications = @(
+    [ordered]@{
+        test_id = 't_demo_add_b1'; ruling = 'document_wrong'; route = 'requirements'
+        evidence = 'The document never states the overflow behaviour the test assumes.'
+    }
+)
+$doc.gaps = @()
+$doc.next_actions = @()
+$doc.summary = [ordered]@{ gaps = 0; mismatches = 0 }
+$r = Invoke-Validator $doc $codeReport
+Assert "document_wrong-unrouted: adjudication raised" (Has-Check $r.Result 'adjudication')
+
+$doc.gaps = @([ordered]@{ ref_id = 'demo.add.b1'; kind = 'document_gap'; severity = 'high' })
+$doc.summary = [ordered]@{ gaps = 1; mismatches = 0 }
+$doc.next_actions = @([ordered]@{ agent = 'requirements'; action = 'State the overflow behaviour for demo.add.' })
+$r = Invoke-Validator $doc $codeReport
+Assert "document_wrong-routed: no adjudication violation" (-not (Has-Check $r.Result 'adjudication'))
+
+# Rejecting an escalation for missing evidence must ask for the evidence.
+$doc = New-CleanReport
+$doc.adjudications = @(
+    [ordered]@{
+        test_id = 't_demo_add_b1'; ruling = 'rejected'
+        evidence = 'The escalation cited no document_says or csharp_does.'
+    }
+)
+$doc.next_actions = @()
+$r = Invoke-Validator $doc $codeReport
+Assert "rejected-silent: adjudication raised" (Has-Check $r.Result 'adjudication')
+
 # --- Case 9b: a ruling that discards the test without commissioning a fix -----
 # `test_wrong` with no replacement order deletes the only test for a requirement
 # and leaves the Code agent blocked on it, while the report still reads as
@@ -226,7 +285,7 @@ Assert "absent-golden: inflated_level raised" (Has-Check $r.Result 'inflated_lev
 $doc = New-CleanReport
 $doc.coverage_level = 'parity-checked'
 $doc.passes_run = [ordered]@{ differential = 'ran' }
-$doc.golden_results = @([ordered]@{ case_id = 'add_basic'; csharp = '4'; status = 'match' })
+$doc.golden_results = @([ordered]@{ case_id = 'add_basic'; csharp = [ordered]@{ ok = $true; value = 4 }; status = 'match' })
 $r = Invoke-Validator $doc
 Assert "incomplete-golden: inflated_level raised" (Has-Check $r.Result 'inflated_level')
 
@@ -235,7 +294,7 @@ $doc = New-CleanReport
 $doc.coverage_level = 'parity-checked'
 $doc.passes_run = [ordered]@{ differential = 'ran' }
 $doc.golden_results = @(
-    [ordered]@{ case_id = 'add_basic'; csharp = '4'; rust = '5'; status = 'mismatch' }
+    [ordered]@{ case_id = 'add_basic'; csharp = [ordered]@{ ok = $true; value = 4 }; rust = [ordered]@{ ok = $true; value = 5 }; status = 'mismatch' }
 )
 $r = Invoke-Validator $doc
 Assert "unreported-mismatch: inflated_level raised" (Has-Check $r.Result 'inflated_level')
@@ -245,10 +304,110 @@ $doc = New-CleanReport
 $doc.coverage_level = 'parity-checked'
 $doc.passes_run = [ordered]@{ differential = 'ran' }
 $doc.golden_results = @(
-    [ordered]@{ case_id = 'add_basic'; csharp = '4'; rust = '4'; status = 'match' }
+    [ordered]@{ case_id = 'add_basic'; csharp = [ordered]@{ ok = $true; value = 4 }; rust = [ordered]@{ ok = $true; value = 4 }; status = 'match' }
 )
 $r = Invoke-Validator $doc
 Assert "complete-golden: no inflated_level violation" (-not (Has-Check $r.Result 'inflated_level'))
+
+# --- Case 9d: the label is not the evidence ----------------------------------
+# The hole this closes: C# returned 4, Rust returned 5, the report said "match",
+# and the pipeline's strongest claim was earned on a divergence.
+function New-ParityClaim {
+    $d = New-CleanReport
+    $d.coverage_level = 'parity-checked'
+    $d.passes_run = [ordered]@{ differential = 'ran' }
+    return $d
+}
+
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'add_basic'; csharp = [ordered]@{ ok = $true; value = 4 }; rust = [ordered]@{ ok = $true; value = 5 }; status = 'match' }
+)
+$r = Invoke-Validator $doc
+Assert "mislabelled-match: exit code = 1" ($r.Exit -eq 1)
+Assert "mislabelled-match: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# Key order is not a difference; the same object must still compare equal.
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{
+        case_id = 'shape'
+        csharp  = [ordered]@{ ok = $true; value = [ordered]@{ a = 1; b = 2 } }
+        rust    = [ordered]@{ value = [ordered]@{ b = 2; a = 1 }; ok = $true }
+        status  = 'match'
+    }
+)
+$r = Invoke-Validator $doc
+Assert "key-order-match: no inflated_level violation" (-not (Has-Check $r.Result 'inflated_level'))
+
+# Declared normalization is the one honest reason unequal outputs match -- but
+# the normalized pair has to be shown, and has to actually be equal.
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{
+        case_id       = 'trailing_zero'
+        csharp        = [ordered]@{ ok = $true; value = '4.50' }
+        rust          = [ordered]@{ ok = $true; value = '4.5' }
+        status        = 'match'
+        normalization = 'decimal scale normalised before comparison'
+        normalized_csharp = [ordered]@{ ok = $true; value = '4.5' }
+        normalized_rust   = [ordered]@{ ok = $true; value = '4.5' }
+    }
+)
+$r = Invoke-Validator $doc
+Assert "shown-normalization: accepted" (-not (Has-Check $r.Result 'inflated_level'))
+
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{
+        case_id       = 'trailing_zero'
+        csharp        = [ordered]@{ ok = $true; value = '4.50' }
+        rust          = [ordered]@{ ok = $true; value = '9.9' }
+        status        = 'match'
+        normalization = 'decimal scale normalised before comparison'
+        normalized_csharp = [ordered]@{ ok = $true; value = '4.5' }
+        normalized_rust   = [ordered]@{ ok = $true; value = '9.9' }
+    }
+)
+$r = Invoke-Validator $doc
+Assert "hollow-normalization: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# An empty string is an absent observation, not an equal one.
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'blank'; csharp = ''; rust = ''; status = 'match' }
+)
+$r = Invoke-Validator $doc
+Assert "blank-outputs: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# A case that failed to run was never compared.
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'boom'; csharp = [ordered]@{ ok = $true; value = 1 }; rust = [ordered]@{ ok = $true; value = 1 }; status = 'error' }
+)
+$r = Invoke-Validator $doc
+Assert "errored-case: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# A bare value cannot distinguish a returned 4 from a thrown exception.
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'bare'; csharp = '4'; rust = '4'; status = 'match' }
+)
+$r = Invoke-Validator $doc
+Assert "bare-envelope: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# A failed envelope with no error type reduces parity to "both failed somehow".
+$doc = New-ParityClaim
+$doc.golden_results = @(
+    [ordered]@{
+        case_id = 'untyped_error'
+        csharp  = [ordered]@{ ok = $false; error = [ordered]@{ message = 'bad' } }
+        rust    = [ordered]@{ ok = $false; error = [ordered]@{ message = 'bad' } }
+        status  = 'match'
+    }
+)
+$r = Invoke-Validator $doc
+Assert "untyped-error: inflated_level raised" (Has-Check $r.Result 'inflated_level')
 
 # --- Case 10: illegal enum values --------------------------------------------
 $doc = New-CleanReport

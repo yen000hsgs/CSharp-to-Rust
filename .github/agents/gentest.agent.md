@@ -68,6 +68,16 @@ write a wrapper that includes each file you generated:
 #[path = "functional/storage_blob_upload.rs"] mod storage_blob_upload;
 ```
 
+**Every test function needs a live `#[test]`.** A bare `fn`, an `#[ignore]`d
+test, or one behind `#[cfg(any())]` is a function cargo never runs, and both
+gates now say so: the coverage gate reports the entry as `phantom` with the
+registration defect named, and the quality gate raises `unregistered_test` or
+`disabled_test` (both critical) and refuses to analyse it. A test gated on a
+predicate the gates cannot evaluate — `#[cfg(feature = "...")]` — is recorded as
+an unknown, which blocks `substantive` for the whole suite. If you cannot cover a
+requirement, say so in `coverage_claim.waived` rather than parking a disabled
+test against it.
+
 One `mod` line per file, every time you add a file. The nested file stays exactly
 where the manifest points, so the coverage gate still resolves it — the wrapper
 only makes cargo see it. Unit tests need private access an integration crate does
