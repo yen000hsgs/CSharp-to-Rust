@@ -128,8 +128,42 @@ function New-RequiredAssertion($Requirement) {
 
 # --- Build the requirement set from the document -----------------------------
 
+# A document whose shape is wrong yields zero requirements, and zero out of zero
+# scores as 100%. A file with a top-level `requirements` key where `features` was
+# expected therefore used to report full coverage against an empty manifest --
+# the gate's strongest possible verdict, produced by reading nothing at all.
+# Invalid input has to fail before any percentage is computed.
+function Assert-DocumentShape($Document, [string]$Path) {
+    $raw = Get-Prop $Document 'features'
+    # @($null) is an array of one $null, not an empty array -- the same trap the
+    # gate is being hardened against, so the nulls are filtered explicitly.
+    $features = @()
+    if ($null -ne $raw -and $raw -isnot [System.DBNull]) {
+        $features = @(@($raw) | Where-Object { $null -ne $_ -and $_ -isnot [System.DBNull] })
+    }
+    if ($features.Count -eq 0) {
+        Write-Host ("ERROR: Document '{0}' declares no requirements: 'features' is missing or empty." -f $Path) -ForegroundColor Red
+        if ($Document -is [System.Management.Automation.PSCustomObject]) {
+            $present = @($Document.PSObject.Properties.Name)
+            if ($present.Count -gt 0) {
+                Write-Host ("  Top-level keys present: {0}" -f ($present -join ', ')) -ForegroundColor Red
+            }
+        }
+        Write-Host "  Expected shape: { features: [ { id, behaviors, errors, invariants, examples } ] }." -ForegroundColor Red
+        Write-Host "  Refusing to score an empty requirement set -- 0 of 0 is not full coverage." -ForegroundColor Red
+        exit 2
+    }
+    foreach ($f in $features) {
+        if ($null -eq $f -or $f -is [string] -or $f -is [System.ValueType]) {
+            Write-Host ("ERROR: Document '{0}' has a non-object entry in 'features'; each feature must be an object with an 'id'." -f $Path) -ForegroundColor Red
+            exit 2
+        }
+    }
+}
+
 $document = Read-Json $DocumentPath 'Document'
 $manifest = Read-Json $ManifestPath 'Manifest'
+Assert-DocumentShape $document $DocumentPath
 
 if (-not $TestsRoot) {
     # Manifest `file` values are run-root relative ("tests/unit/foo.rs"), and the

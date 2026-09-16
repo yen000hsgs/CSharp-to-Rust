@@ -82,7 +82,19 @@ function Get-Prop($Object, [string]$Name) {
     return $null
 }
 
+function Get-ListProp($Object, [string]$Name) {
+    # `@(Get-Prop $o 'missing')` is an array of one $null, not an empty array, so
+    # every "the array is empty" test silently passed for an *absent* key. That is
+    # how a report could omit golden_results entirely and still claim the level
+    # those results exist to earn.
+    $value = Get-Prop $Object $Name
+    if ($null -eq $value -or $value -is [System.DBNull]) { return @() }
+    return @(@($value) | Where-Object { $null -ne $_ -and $_ -isnot [System.DBNull] })
+}
+
 $report = Read-Json $ReportPath 'Parity report'
+
+
 $codeReport = if ($CodeReportPath) { Read-Json $CodeReportPath 'Code report' } else { $null }
 $manifest = if ($ManifestPath) { Read-Json $ManifestPath 'Manifest' } else { $null }
 
@@ -115,13 +127,13 @@ elseif ($coverageLevel -notin $validLevels) {
     Add-Violation 'shape' 'critical' "coverage_level '$coverageLevel' is not a legal value." "Use one of: $($validLevels -join ', ')."
 }
 
-$gaps = @(Get-Prop $report 'gaps')
-$mismatches = @(Get-Prop $report 'mismatches')
-$probes = @(Get-Prop $report 'mutation_probes')
-$requiredTests = @(Get-Prop $report 'required_tests')
-$nextActions = @(Get-Prop $report 'next_actions')
-$adjudications = @(Get-Prop $report 'adjudications')
-$disputeRulings = @(Get-Prop $report 'dispute_rulings')
+$gaps = @(Get-ListProp $report 'gaps')
+$mismatches = @(Get-ListProp $report 'mismatches')
+$probes = @(Get-ListProp $report 'mutation_probes')
+$requiredTests = @(Get-ListProp $report 'required_tests')
+$nextActions = @(Get-ListProp $report 'next_actions')
+$adjudications = @(Get-ListProp $report 'adjudications')
+$disputeRulings = @(Get-ListProp $report 'dispute_rulings')
 
 # --- 2. Counts match reality -------------------------------------------------
 
@@ -197,7 +209,7 @@ if ($coverageLevel -eq 'proven' -or $coverageLevel -eq 'parity-checked') {
             "coverage_level is '$coverageLevel' but no mutation probe in the report has outcome 'killed'." `
             "'proven' requires at least one requirement whose test demonstrably failed when the code was broken. Downgrade to 'substantive', or run pass 2b and record the probes."
     }
-    $probedScope = @(Get-Prop $report 'proven_scope')
+    $probedScope = @(Get-ListProp $report 'proven_scope')
     if ($killedRefs.Count -gt 0 -and $probedScope.Count -eq 0) {
         Add-Violation 'inflated_level' 'high' `
             "coverage_level is '$coverageLevel' but the report does not state which requirements were probed." `
@@ -218,11 +230,54 @@ if ($coverageLevel -eq 'proven' -or $coverageLevel -eq 'parity-checked') {
 }
 
 if ($coverageLevel -eq 'parity-checked') {
-    $golden = @(Get-Prop $report 'golden_results')
+    # The level's whole meaning is "the two implementations were run against each
+    # other". Claiming it while the pass that does the running is marked skipped
+    # is the single most misleading state this report can be in, so the claim is
+    # checked against the pass log, not only against the results array.
+    $passes = Get-Prop $report 'passes_run'
+    $differential = [string](Get-Prop $passes 'differential')
+    if ($differential -ne 'ran') {
+        Add-Violation 'inflated_level' 'critical' `
+            ("coverage_level is 'parity-checked' but passes_run.differential is '{0}'." -f $(if ($differential) { $differential } else { 'absent' })) `
+            "'parity-checked' means C# and Rust were executed and compared. Run the differential pass, or downgrade the level to 'substantive'."
+    }
+
+    $golden = @(Get-ListProp $report 'golden_results')
     if ($golden.Count -eq 0) {
         Add-Violation 'inflated_level' 'critical' `
             "coverage_level is 'parity-checked' but no golden case results are recorded." `
             "The top level requires executed C#-vs-Rust comparisons. Record golden_results, or downgrade the level."
+    }
+
+    # A result object missing the side it is supposed to compare proves nothing;
+    # counting it made the array's length, not its content, carry the claim.
+    $mismatchCases = @{}
+    foreach ($mm in $mismatches) {
+        $cid = [string](Get-Prop $mm 'case_id')
+        if ($cid) { $mismatchCases[$cid] = $true }
+    }
+    foreach ($g in $golden) {
+        $caseId = [string](Get-Prop $g 'case_id')
+        $label = if ($caseId) { $caseId } else { '(unnamed case)' }
+        foreach ($field in 'case_id', 'csharp', 'rust', 'status') {
+            if ($null -eq (Get-Prop $g $field) -or (Get-Prop $g $field) -is [System.DBNull]) {
+                Add-Violation 'inflated_level' 'critical' `
+                    "Golden result '$label' has no '$field'." `
+                    "A comparison needs both observed outputs and a verdict. Record case_id, csharp, rust and status (match | mismatch | error)."
+            }
+        }
+        $status = [string](Get-Prop $g 'status')
+        if ($status -and $status -notin @('match', 'mismatch', 'error')) {
+            Add-Violation 'inflated_level' 'high' `
+                "Golden result '$label' has status '$status'." 'Use match | mismatch | error.'
+        }
+        # Otherwise a run can record a differing pair, call it a match, and the
+        # mismatch never reaches the summary the orchestrator reads.
+        if ($status -eq 'mismatch' -and -not $mismatchCases.ContainsKey($caseId)) {
+            Add-Violation 'inflated_level' 'critical' `
+                "Golden result '$label' is a mismatch but no entry in 'mismatches' reports it." `
+                'Every mismatching case must appear in mismatches, or it is invisible to the verdict and the counts.'
+        }
     }
 }
 
@@ -278,19 +333,65 @@ if ($verdict -in @('pass', 'pass_with_warnings')) {
 
 # --- 8. Blocked tests must be ruled on ---------------------------------------
 
-if ($codeReport) {
-    $adjudicated = @{}
-    foreach ($a in $adjudications) {
-        $tid = [string](Get-Prop $a 'test_id')
-        if ($tid) { $adjudicated[$tid] = $true }
-        $ruling = [string](Get-Prop $a 'ruling')
-        if ($ruling -notin @('test_wrong', 'code_wrong', 'document_wrong', 'rejected')) {
-            Add-Violation 'adjudication' 'high' `
-                "Adjudication for '$tid' has ruling '$ruling'." `
-                "Use test_wrong | code_wrong | document_wrong | rejected."
+# Validating adjudications only when a code report happens to be supplied left
+# the content of every ruling unchecked. A ruling is what unblocks the Code
+# agent, so it runs unconditionally.
+$adjudicated = @{}
+$incorrectTestOrders = @{}
+foreach ($rt in $requiredTests) {
+    if ([string](Get-Prop $rt 'reason') -ne 'incorrect_test') { continue }
+    $rid = [string](Get-Prop $rt 'ref_id')
+    if ($rid) { $incorrectTestOrders[$rid] = $true }
+}
+
+foreach ($a in $adjudications) {
+    $tid = [string](Get-Prop $a 'test_id')
+    if ($tid) { $adjudicated[$tid] = $true }
+    else {
+        Add-Violation 'adjudication' 'high' `
+            'An adjudication has no test_id.' 'Name the test the ruling applies to; otherwise it unblocks nothing.'
+    }
+
+    $ruling = [string](Get-Prop $a 'ruling')
+    if ($ruling -notin @('test_wrong', 'code_wrong', 'document_wrong', 'rejected')) {
+        Add-Violation 'adjudication' 'high' `
+            "Adjudication for '$tid' has ruling '$ruling'." `
+            "Use test_wrong | code_wrong | document_wrong | rejected."
+    }
+
+    # Same standard as a dispute ruling: without the text it was read against,
+    # a ruling is an assertion, and the agent it overrules cannot act on it.
+    if (-not [string](Get-Prop $a 'evidence')) {
+        Add-Violation 'adjudication' 'high' `
+            "Adjudication for '$tid' cites no evidence." `
+            'Quote the requirement, the test and the observed result the ruling was based on. An unevidenced ruling is the self-report this pipeline exists to replace.'
+    }
+
+    # A verdict alone changes nothing: the test is still wrong next round and the
+    # Code agent is still blocked on it. The correction has to be commissioned,
+    # and work orders are keyed by requirement, so the ruling must name one.
+    if ($ruling -eq 'test_wrong') {
+        $refId = [string](Get-Prop $a 'ref_id')
+        if (-not $refId) {
+            Add-Violation 'adjudication' 'critical' `
+                "Adjudication rules '$tid' test_wrong but names no 'ref_id'." `
+                'Name the requirement the discarded test was covering. Without it the requirement loses its only test and nothing records the loss.'
+        }
+        elseif (-not $incorrectTestOrders.ContainsKey($refId)) {
+            Add-Violation 'adjudication' 'critical' `
+                "Adjudication rules '$tid' test_wrong but no required_tests entry commissions a replacement for '$refId'." `
+                "Emit a required_tests entry with ref_id '$refId' and reason 'incorrect_test'. The Code agent cannot edit tests, so a ruling with no work order leaves it blocked and the requirement untested."
         }
     }
-    foreach ($ft in @(Get-Prop $codeReport 'failing_tests')) {
+    if ($ruling -eq 'document_wrong' -and -not [string](Get-Prop $a 'route')) {
+        Add-Violation 'adjudication' 'high' `
+            "Adjudication rules '$tid' document_wrong but names no route for the correction." `
+            "Set route to the owner of the fix (requirements | gentest). A document defect nobody is asked to fix recurs every round."
+    }
+}
+
+if ($codeReport) {
+    foreach ($ft in @(Get-ListProp $codeReport 'failing_tests')) {
         $tid = [string](Get-Prop $ft 'test_id')
         if (-not $adjudicated.ContainsKey($tid)) {
             Add-Violation 'adjudication' 'critical' `
@@ -334,7 +435,7 @@ if ($manifest) {
         if ($rid) { $requiredRefs[$rid] = $true }
     }
 
-    foreach ($d in @(Get-Prop $manifest 'disputes')) {
+    foreach ($d in @(Get-ListProp $manifest 'disputes')) {
         $rid = [string](Get-Prop $d 'ref_id')
         if (-not $ruledDisputes.ContainsKey($rid)) {
             Add-Violation 'dispute_ruling' 'critical' `

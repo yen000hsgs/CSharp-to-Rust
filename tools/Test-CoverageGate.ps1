@@ -217,6 +217,32 @@ $dupeDoc | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $dupePath -Encodi
 $r = Invoke-Gate $root $dupePath
 Assert 'dupe-ids' 'exit code' 2 $r.ExitCode
 
+# --- 4c. a document of the wrong shape ---------------------------------------
+# Zero requirements divided by zero requirements scored as 100%, so a file using
+# a top-level `requirements` key earned the gate's strongest verdict against an
+# empty manifest -- a full pass produced by reading nothing at all. Unreadable
+# input must fail as input, before any percentage exists.
+
+$root = New-Case 'wrong-schema'
+'{ "run_id": "r", "tests": [], "coverage_claim": { "waived": [] } }' |
+    Set-Content -LiteralPath (Join-Path $root 'tests\manifest.json') -Encoding UTF8
+$wrongPath = Join-Path $root 'document.json'
+'{ "source": { "language": "csharp" }, "requirements": [ { "id": "a.b1", "statement": "x" } ] }' |
+    Set-Content -LiteralPath $wrongPath -Encoding UTF8
+
+$r = Invoke-Gate $root $wrongPath
+Assert 'wrong-schema' 'exit code' 2 $r.ExitCode
+
+# An empty features array is the same defect wearing the right key.
+$root = New-Case 'empty-features'
+'{ "run_id": "r", "tests": [], "coverage_claim": { "waived": [] } }' |
+    Set-Content -LiteralPath (Join-Path $root 'tests\manifest.json') -Encoding UTF8
+$emptyPath = Join-Path $root 'document.json'
+'{ "features": [] }' | Set-Content -LiteralPath $emptyPath -Encoding UTF8
+
+$r = Invoke-Gate $root $emptyPath
+Assert 'empty-features' 'exit code' 2 $r.ExitCode
+
 # --- 5. schema-shaped manifest -----------------------------------------------
 # The regression case for the bug this gate shipped with: docs/contracts.md puts
 # the feature id in `feature_id` and only child ids in `covers`. The gate used to

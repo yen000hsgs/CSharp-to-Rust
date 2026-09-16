@@ -40,16 +40,23 @@ and report that**. Do not go looking for a substitute, and do not infer features
 from C# source alone — a suite built on a guessed spec silently mis-specifies the
 Code agent's target.
 
-**Outputs:**
+**Outputs** — paths are relative to the run root; the crate root is `<run>/rust`
+(see *Run layout* in `docs/contracts.md`):
 
 | Artifact | Content |
 | --- | --- |
-| `tests/manifest.json` | Test inventory with full traceability. |
-| `tests/unit/*.rs` | Unit tests, one file per feature namespace. |
-| `tests/functional/*.rs` | Public-API tests. |
-| `tests/e2e/*.rs` | End-to-end tests. |
-| `tests/functional.rs`, `tests/e2e.rs` | Cargo root wrappers (below). |
-| `tests/golden/cases.json` | Differential C#-vs-Rust cases. |
+| `tests/manifest.json` | Test inventory with full traceability. Metadata only. |
+| `rust/src/*_tests.rs` | Unit tests, one file per feature namespace. |
+| `rust/tests/functional/*.rs` | Public-API tests. |
+| `rust/tests/e2e/*.rs` | End-to-end tests. |
+| `rust/tests/functional.rs`, `rust/tests/e2e.rs` | Cargo root wrappers (below). |
+| `rust/tests/golden/cases.json` | Differential C#-vs-Rust cases. |
+
+Every `file` value you write into the manifest is **relative to the crate root**,
+not to the manifest: `src/calculator_tests.rs`, `tests/functional/upload.rs`. The
+manifest deliberately sits outside the crate so it can exist before the crate
+does; that is why the paths inside it are crate-relative and why both gates are
+invoked with `-TestsRoot <run>/rust`.
 
 **Emit the root wrappers.** Cargo only compiles top-level `.rs` files under
 `tests/`, so a nested `tests/functional/storage_blob_upload.rs` is never built
@@ -57,18 +64,21 @@ and its tests silently do not exist. For the `functional` and `e2e` tiers, also
 write a wrapper that includes each file you generated:
 
 ```rust
-// tests/functional.rs
+// rust/tests/functional.rs
 #[path = "functional/storage_blob_upload.rs"] mod storage_blob_upload;
 ```
 
 One `mod` line per file, every time you add a file. The nested file stays exactly
 where the manifest points, so the coverage gate still resolves it — the wrapper
 only makes cargo see it. Unit tests need private access an integration crate does
-not have, so they are included from `src/` by the Code agent; that is the one
-tier you do not wrap.
+not have, so they live under `rust/src/` and are included from the owning module
+by the Code agent; that is the one tier you do not wrap.
 
 You MUST NOT write production code — not a stub, not a trivial helper "just to
-make it compile" — and MUST NOT write into the Rust crate directory.
+make it compile". Writing test sources into `rust/src/` and `rust/tests/` is
+required and is the only reason you touch the crate directory; you MUST NOT
+create or modify `Cargo.toml`, `src/lib.rs`, `src/main.rs`, or any non-test
+module.
 
 ## Core rule: iterate features, not files
 
@@ -84,12 +94,13 @@ you are interrupted, the completed features must already be recorded.
 ## Test tiers
 
 **`unit`** — Pure logic, no I/O, no network, no filesystem. Deterministic.
-Targets a single function or type. Lives in `tests/unit/` as a module intended to
-be included under `#[cfg(test)]`. This is the tier the Code agent iterates
-against, so it must be fast and hermetic. Fake all collaborators.
+Targets a single function or type. Lives under `rust/src/` as a module intended
+to be included under `#[cfg(test)]`, because private access is impossible from
+`tests/`. This is the tier the Code agent iterates against, so it must be fast
+and hermetic. Fake all collaborators.
 
 **`functional`** — Exercises the public API surface as a consumer would, across
-multiple units. Integration-style, in `tests/functional/`. Local fakes or
+multiple units. Integration-style, in `rust/tests/functional/`. Local fakes or
 in-memory doubles are allowed; real external services are not.
 
 **`e2e`** — Runs the built artifact against a real or containerized environment.
@@ -136,8 +147,10 @@ report worthless.
 **Do not invent entry-point names.** Derive them mechanically from the
 `feature_id` per the table in `docs/contracts.md`: the C# side is `Harness.` plus
 each dot-segment in PascalCase, the Rust side is `harness::` plus each segment in
-snake_case. The Code agent owns both harness implementations; your job is to name
-them correctly so the two sides resolve to the same case.
+snake_case. The Code agent owns the Rust harness; the C# runner is supplied to
+the parity verifier by the orchestrator and is written by no agent here. Your job
+is to name both sides correctly so the two resolve to the same case — the cases
+file stays valid whether or not a C# runner ever turns up.
 
 ## Gap-fill mode
 
@@ -241,9 +254,13 @@ make the requirement tested.
    ```powershell
    ./tools/Check-Coverage.ps1 -DocumentPath <document.json> `
                               -ManifestPath <tests/manifest.json> `
+                              -TestsRoot <run>/rust `
                               -ReportPath <reports/coverage.json>
    ```
 
+   `-TestsRoot` is the crate root and is not optional in practice: without it the
+   gate resolves your crate-relative `file` paths against the manifest's own
+   directory, finds nothing, and reports every test as `phantom`.
    Exit 0 passes. Exit 1 means real gaps: fix them and re-run. Exit 2 means the
    document itself is untraceable (a requirement with no `id`) — that is a
    blocker for the upstream agent, not something you work around by inventing
@@ -259,6 +276,7 @@ make the requirement tested.
    ```powershell
    ./tools/Check-TestQuality.ps1 -DocumentPath <document.json> `
                                  -ManifestPath <tests/manifest.json> `
+                                 -TestsRoot <run>/rust `
                                  -ReportPath <reports/quality.json>
    ```
 

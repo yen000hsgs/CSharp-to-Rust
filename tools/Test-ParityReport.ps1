@@ -162,7 +162,7 @@ Assert "unadjudicated: adjudication raised" (Has-Check $r.Result 'adjudication')
 $doc = New-CleanReport
 $doc.adjudications = @(
     [ordered]@{
-        test_id = 't_demo_add_b1'; ruling = 'test_wrong'
+        test_id = 't_demo_add_b1'; ruling = 'test_wrong'; ref_id = 'demo.add.b1'
         evidence = 'Demo.cs#L10-L12 returns a + b; document demo.add.b1 agrees.'
     }
 )
@@ -172,6 +172,83 @@ $doc.required_tests += [ordered]@{
 }
 $r = Invoke-Validator $doc $codeReport
 Assert "adjudicated: no adjudication violation" (-not (Has-Check $r.Result 'adjudication'))
+
+# --- Case 9b: a ruling that discards the test without commissioning a fix -----
+# `test_wrong` with no replacement order deletes the only test for a requirement
+# and leaves the Code agent blocked on it, while the report still reads as
+# resolved. The ruling must be checked, not merely counted.
+$doc = New-CleanReport
+$doc.adjudications = @(
+    [ordered]@{ test_id = 't_demo_add_b1'; ruling = 'test_wrong' }
+)
+$r = Invoke-Validator $doc $codeReport
+Assert "bare-ruling: exit code = 1" ($r.Exit -eq 1)
+Assert "bare-ruling: adjudication raised" (Has-Check $r.Result 'adjudication')
+
+# A ruling naming its requirement but commissioning nothing is still a dropped
+# requirement, so the work order is checked separately from the ref_id.
+$doc = New-CleanReport
+$doc.adjudications = @(
+    [ordered]@{
+        test_id = 't_demo_add_b1'; ruling = 'test_wrong'; ref_id = 'demo.add.b1'
+        evidence = 'Demo.cs#L10-L12 returns a + b.'
+    }
+)
+$r = Invoke-Validator $doc $codeReport
+Assert "uncommissioned-ruling: adjudication raised" (Has-Check $r.Result 'adjudication')
+
+# --- Case 9c: 'parity-checked' without an executed differential pass ----------
+# The level's entire meaning is that the two implementations were run against
+# each other. A report that claims it while the pass is marked skipped is the
+# most misleading state possible, so the claim is checked against the pass log.
+$doc = New-CleanReport
+$doc.coverage_level = 'parity-checked'
+$doc.passes_run = [ordered]@{
+    coverage = 'ran'; quality = 'ran'; differential = 'skipped: no crate supplied'
+    mutation = 'ran'; semantic = 'ran'
+}
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'add_basic'; csharp = '4'; rust = '4'; status = 'match' }
+)
+$r = Invoke-Validator $doc
+Assert "skipped-differential: exit code = 1" ($r.Exit -eq 1)
+Assert "skipped-differential: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# Omitting the results entirely must not read as "no failures found".
+$doc = New-CleanReport
+$doc.coverage_level = 'parity-checked'
+$doc.passes_run = [ordered]@{ differential = 'ran' }
+$r = Invoke-Validator $doc
+Assert "absent-golden: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# A result object missing the side it is meant to compare proves nothing; the
+# array's length must not carry the claim on its own.
+$doc = New-CleanReport
+$doc.coverage_level = 'parity-checked'
+$doc.passes_run = [ordered]@{ differential = 'ran' }
+$doc.golden_results = @([ordered]@{ case_id = 'add_basic'; csharp = '4'; status = 'match' })
+$r = Invoke-Validator $doc
+Assert "incomplete-golden: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# A mismatching case that never reaches `mismatches` is invisible to the verdict.
+$doc = New-CleanReport
+$doc.coverage_level = 'parity-checked'
+$doc.passes_run = [ordered]@{ differential = 'ran' }
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'add_basic'; csharp = '4'; rust = '5'; status = 'mismatch' }
+)
+$r = Invoke-Validator $doc
+Assert "unreported-mismatch: inflated_level raised" (Has-Check $r.Result 'inflated_level')
+
+# The complete, honest form of the same claim must pass.
+$doc = New-CleanReport
+$doc.coverage_level = 'parity-checked'
+$doc.passes_run = [ordered]@{ differential = 'ran' }
+$doc.golden_results = @(
+    [ordered]@{ case_id = 'add_basic'; csharp = '4'; rust = '4'; status = 'match' }
+)
+$r = Invoke-Validator $doc
+Assert "complete-golden: no inflated_level violation" (-not (Has-Check $r.Result 'inflated_level'))
 
 # --- Case 10: illegal enum values --------------------------------------------
 $doc = New-CleanReport

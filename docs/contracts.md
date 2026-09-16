@@ -89,6 +89,74 @@ conventions, scoped under the owning feature id:
 The set of all such ids is the **requirement set**. Coverage is defined as a set
 relation against it, not as a judgment.
 
+## Run layout
+
+Every artifact for one migration attempt lives under a single run directory.
+There is exactly one Rust crate, and **its root is `<run>/rust`** — the directory
+holding `Cargo.toml`. Cargo will not discover a test that lives outside it.
+
+```
+artifacts/<run>/
+  document.json            # requirements agent output
+  tests/
+    manifest.json          # GenTest output -- metadata only, no Rust sources
+  rust/                    # <- the crate root; cargo is invoked here
+    Cargo.toml
+    src/...
+    tests/...
+  reports/
+    coverage.json  test-quality.json  parity-report.json  code-report.json
+```
+
+`manifest.json` sits beside the crate rather than inside it so that a test
+inventory can exist before any crate does — GenTest runs before the code agent,
+and the coverage gate must be runnable at that point. Because of that split,
+**every `file` value in the manifest is relative to the crate root, never to the
+manifest's own directory**: `src/tests_unit.rs`, `tests/e2e.rs`. A path such as
+`../rust/src/...` or an absolute path is a schema violation.
+
+Both gates that read test sources therefore need the crate root, which is not
+derivable from the manifest path:
+
+```powershell
+./tools/Check-Coverage.ps1 -DocumentPath artifacts/<run>/document.json `
+                           -ManifestPath artifacts/<run>/tests/manifest.json `
+                           -TestsRoot    artifacts/<run>/rust
+```
+
+Omitting `-TestsRoot` makes it default to the manifest's parent directory, where
+no Rust source exists; every entry then resolves to a missing file and is
+reported as `phantom`. That is a loud failure by design — a suite that measures
+nothing must never be mistaken for a suite that passes.
+
+Where each tier lives inside the crate is fixed by what Rust permits, not by
+preference:
+
+| Tier | Location | Why |
+| --- | --- | --- |
+| `unit` | `src/`, e.g. `src/tests_unit.rs` | Needs private access. A file under `tests/` is a separate crate and only sees the public API. |
+| `functional`, `e2e` | `tests/`, e.g. `tests/functional.rs` | Integration tests against the public API, which is exactly what these tiers assert. |
+
+Cargo compiles only top-level `.rs` files under `tests/`, so a nested
+`tests/functional/upload.rs` is never built on its own. Nested files must be
+pulled in from a top-level wrapper:
+
+```rust
+// rust/tests/functional.rs
+#[path = "functional/upload.rs"]
+mod upload;
+```
+
+Unit test files are included from the module they exercise, with a path relative
+to *that module's* file:
+
+```rust
+// rust/src/lib.rs
+#[cfg(test)]
+#[path = "tests_unit.rs"]
+mod tests_unit;
+```
+
 ## `tests/manifest.json` — GenTest output
 
 ```jsonc
@@ -102,7 +170,7 @@ relation against it, not as a judgment.
       "covers": ["storage.blob.upload.b1"],      // behavior/error/example ids
       "tier": "unit",                             // unit | functional | e2e
       "assertion_kind": "value",                  // value | error | invariant | side_effect | property
-      "file": "tests/unit/storage_blob_upload.rs",
+      "file": "src/tests_unit.rs",                // crate-relative; see Run layout
       "test_fn": "overwrites_existing_blob",
       "rationale": "b1 states overwrite semantics; asserts second upload wins.",
       "status": "expected_fail_until_implemented"
@@ -181,10 +249,26 @@ only executable if both names resolve, so they are derived mechanically from the
 | `csharp` | `Harness.` + each dot-segment in PascalCase | `Harness.Storage.Blob.Upload` |
 | `rust` | `harness::` + each dot-segment in snake_case | `harness::storage::blob::upload` |
 
-**Ownership:** the **Code agent** owns the Rust side of the differential harness.
-This document defines the protocol and the C# runner that ships with the sample
-implements it —
-both sides are **batch runners**, not per-case filters:
+**Ownership.** The **Code agent** owns the Rust side of the differential harness
+and must build it as part of the port. **No agent in this pipeline owns the C#
+side.** It has to be written against the original C# source, which is read-only
+input to every agent here, so it is an *input to the run*: the orchestrator
+supplies a runner command, or the differential pass does not happen.
+
+That produces exactly three legal states, and the parity gate enforces them:
+
+| C# runner | `passes_run.differential` | Highest legal `coverage_level` |
+| --- | --- | --- |
+| Supplied and ran | `ran` | `parity-checked` |
+| Supplied but failed to run | `error` (with the failure in `blockers[]`) | `substantive` |
+| Not supplied | `skipped` (with "no C# runner supplied" in `blockers[]`) | `substantive` |
+
+A `parity-checked` claim without `differential: "ran"` is a critical violation.
+There is no path by which a verifier reasons its way to parity from reading the
+C# — the pass exists precisely because reading is not running.
+
+This document defines the protocol both sides implement. They are **batch
+runners**, not per-case filters:
 
 ```
 <harness> --cases <cases.json> [--out <results.json>]
@@ -281,6 +365,14 @@ source, not a test, so it does not breach the read-only rule.
       "suggested_test": "Assert continuation token is returned when page is full."
     }
   ],
+  "golden_results": [
+    {
+      "case_id": "g_storage_blob_upload_x1",
+      "csharp": { "ok": true, "value": { "length": 2 } },
+      "rust":   { "ok": true, "value": { "length": 0 } },
+      "status": "mismatch"              // match | mismatch | error
+    }
+  ],
   "mismatches": [
     {
       "case_id": "g_storage_blob_upload_x1",
@@ -316,6 +408,12 @@ source, not a test, so it does not breach the read-only rule.
       "test_id": "t_storage_blob_upload_b2_streaming",
       "ruling": "code_wrong",           // test_wrong | code_wrong | document_wrong | rejected
       "evidence": "Document b2 says 'streamed'; csharp/Storage/BlobClient.cs#L40-L88 confirms. The test is correct."
+    },
+    {
+      "test_id": "t_storage_blob_list_b7_token",
+      "ruling": "test_wrong",
+      "ref_id": "storage.blob.list.b7", // required on test_wrong: the requirement left uncovered
+      "evidence": "The test asserts a page size of 100; document b7 and BlobClient.cs#L120 both say 50."
     }
   ],
   "dispute_rulings": [
@@ -364,6 +462,15 @@ must never be inflated:
 | `proven` | + mutation probe | The test fails when the behavior breaks. |
 | `parity-checked` | + differential run | Its expectation matches the C# original. |
 
+`parity-checked` additionally requires `passes_run.differential: "ran"` and a
+`golden_results[]` table — one entry per golden case, each carrying `case_id`,
+the `csharp` output, the `rust` output, and a `status` of `match`, `mismatch`, or
+`error`. Every `status: mismatch` must have a corresponding `mismatches[]` entry.
+A parity claim backed by no execution record is the failure mode the level
+exists to rule out, so `tools/Check-ParityReport.ps1` treats it as critical
+rather than as a note. The C# runner is an input the orchestrator supplies; when
+it is absent the differential is `skipped` and `substantive` is the ceiling.
+
 `required_tests` is the feedback channel that closes the loop. GenTest is best
 effort, so the verifier owns the coverage verdict and must return a work order
 precise enough to act on without re-deriving the analysis. A gap reported without
@@ -378,10 +485,24 @@ Code agent is the only agent that executes the tests, so it is the only one that
 can discover a test that is itself wrong — and it is forbidden from editing
 tests. Its only correct move is to stop and report the conflict with evidence.
 The orchestrator then hands that report here, because ruling on a test against
-its source requirement is what this agent does. A `test_wrong` ruling becomes a
-`required_tests` entry with `reason: incorrect_test` directing GenTest to correct
-the existing test. An unruled entry deadlocks the loop, so
-`tools/Check-ParityReport.ps1` fails the report when one is left unanswered.
+its source requirement is what this agent does.
+
+Every adjudication carries `test_id`, a `ruling`, and non-empty `evidence` — a
+ruling without evidence is an assertion of authority, and the agent it lands on
+has no way to act on it. Two rulings carry an extra obligation, because they
+discard work that something still has to do:
+
+| `ruling` | Also required | Why |
+| --- | --- | --- |
+| `test_wrong` | `ref_id`, plus a `required_tests[]` entry for that same `ref_id` with `reason: incorrect_test` | Discarding the test leaves its requirement uncovered. Naming the requirement is what tells GenTest which test to correct. |
+| `document_wrong` | `route` | The defect is upstream; without a destination the finding stops here and the Code agent stays blocked. |
+
+`tools/Check-ParityReport.ps1` enforces all of this, including that the
+`required_tests` entry actually exists. Ruling a test wrong and emitting no work
+order reports success while the Code agent remains blocked on the same test — the
+precise shape of a loop that terminates without converging. An unruled entry
+deadlocks the loop the other way, so the gate fails the report when one is left
+unanswered.
 
 `dispute_rulings[]` does the same job for the opposite direction. GenTest may
 reject a `required_tests` entry via `manifest.disputes[]`, and the verifier is
@@ -505,23 +626,31 @@ credited as covered when a test carries it in `feature_id`, or when any of its
 child requirements is covered. Requiring a feature id to appear in `covers`
 would fail every manifest written to this contract.
 
-Manifest `file` paths are resolved against the tests root and may not escape it;
-an absolute path is used as-is rather than re-rooted. A path that escapes is
-reported as `phantom`, not silently followed.
+Manifest `file` paths are resolved against the tests root — the crate root, see
+[Run layout](#run-layout) — and may not escape it; an absolute path is used as-is
+rather than re-rooted. A path that escapes is reported as `phantom`, not silently
+followed.
 
 ```powershell
 ./tools/Check-Coverage.ps1 -DocumentPath artifacts/<run>/document.json `
                            -ManifestPath artifacts/<run>/tests/manifest.json `
+                           -TestsRoot    artifacts/<run>/rust `
                            -ReportPath   artifacts/<run>/reports/coverage.json
 ```
 
 Exit codes: `0` pass, `1` gaps found, `2` usage or schema error. Add
 `-FailOnWaived` for a release gate where no waiver is acceptable.
 
-**Exit 2 means the document is untraceable** — a behavior, error, invariant, or
+**Exit 2 means the document is untraceable** — it is not in this contract's shape
+(no `features` array, or an empty one), or a behavior, error, invariant, or
 example carries no `id`, so it cannot be counted or pointed at. This is a defect
 in the upstream requirement document; it must not be worked around by inventing
 ids downstream, because the invented id will not match the next run's.
+
+The shape check comes before any arithmetic on purpose. A file with a top-level
+`requirements` key instead of `features` yields an empty requirement set, and
+0 of 0 scores as 100% — the gate's strongest verdict, produced by reading
+nothing. Input that cannot be read is a usage error, never a pass.
 
 `tools/Test-CoverageGate.ps1` self-tests the gate against synthetic clean,
 dishonest, waived, id-less, schema-shaped, and exotic-signature fixtures. Run it
@@ -545,7 +674,7 @@ test body named in the manifest and reports:
 | `unimplemented_test` | critical | Body is empty or only `todo!()`/`unimplemented!()`. |
 | `no_assertion` | critical | No assertion macro; passes as long as nothing panics. |
 | `tautological_assertion` | critical | `assert!(true)`, `assert_eq!(x, x)` — cannot fail. |
-| `unchecked_error_path` | high | Covers an error requirement but never asserts an error or panic. |
+| `unchecked_error_path` | high | Covers an error requirement but never asserts an error or panic. An example whose documented `expected` is an `error` counts as an error requirement, whatever the manifest's `assertion_kind` says. |
 | `unbound_oracle` | high | Covers a documented example but the expected value never appears in the test. Skipped when the example's `expected` is an `error` (a Rust port asserts its own error variant, never the C# exception name) and for booleans (`assert!(x.is_active)` carries no literal `true`). |
 | `smoke_only` | medium | Only `is_ok`/`is_some` presence checks; no value compared. `is_none`/`is_empty` are *not* flagged — they are the exact assertion for a documented null or empty result. |
 
@@ -557,9 +686,17 @@ to `substantive`. The scanner is a conservative Rust lexer, not a parser — it
 understands raw and byte strings, nested block comments, char literals and
 lifetimes, and it says so when it is out of its depth instead of guessing.
 
+**Only executable text is evidence.** Comments and string contents are blanked
+before anything is detected, so a `fn` that exists only inside a comment is
+undiscoverable (`not_analysed`, never a pass) and an `assert_eq!` that appears
+only inside a string literal does not count as an assertion. Blanking preserves
+every byte offset, so the literals an assertion genuinely passes — the expected
+values the `unbound_oracle` check reads — survive intact.
+
 ```powershell
 ./tools/Check-TestQuality.ps1 -DocumentPath artifacts/<run>/document.json `
                               -ManifestPath artifacts/<run>/tests/manifest.json `
+                              -TestsRoot    artifacts/<run>/rust `
                               -ReportPath   artifacts/<run>/reports/quality.json
 ```
 

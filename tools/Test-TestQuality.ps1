@@ -157,6 +157,42 @@ fn bad_err_constructed_not_asserted() {
 }
 
 #[test]
+fn good_error_example_by_name() {
+    // Harness-style: the port is driven through JSON, so the error is asserted
+    // by its documented name rather than as a Rust Result. That is a real error
+    // assertion and must not be reported as a missing one.
+    let out = run_case("empty_sku");
+    assert_eq!(out["ok"], false);
+    assert_eq!(out["error"]["type"], "InvalidOperationException");
+}
+
+// #[test]
+// fn commented_out_test() {
+//     assert_eq!(add("widget-1", 3, "19.99").unwrap().line_total, "59.97");
+// }
+
+/*
+#[test]
+fn block_commented_test() {
+    assert_eq!(compute_total(), "1.00");
+}
+*/
+
+#[test]
+fn bad_stringly_assertion() {
+    // The only assertion is inside a string literal, so nothing executes it.
+    let source = "assert_eq!(item.line_total, \"59.97\");";
+    println!("{}", source);
+}
+
+#[test]
+fn bad_error_example_asserts_ok() {
+    // Covers an example documented to fail, yet asserts success.
+    let result = add("", 1, "1.00");
+    assert_eq!(result, Ok(5));
+}
+
+#[test]
 fn bad_oracle_outside_assertion() {
     // The documented values appear in the body but never in an assertion.
     let expected_total = "59.97";
@@ -191,6 +227,11 @@ function New-Test([string]$id, [string]$fn, [string[]]$covers) {
         New-Test 't_good_empty'      'good_empty_test'         @('demo.add.i1')
         New-Test 't_good_raw'        'good_raw_string_test'    @('demo.add.x1')
         New-Test 't_good_err_ex'     'good_error_example_test' @('demo.add.x2')
+        New-Test 't_good_err_named'  'good_error_example_by_name' @('demo.add.x2')
+        New-Test 't_commented'       'commented_out_test'      @('demo.add.x1')
+        New-Test 't_block_commented' 'block_commented_test'    @('demo.add.i1')
+        New-Test 't_stringly'        'bad_stringly_assertion'  @('demo.add.x1')
+        New-Test 't_err_ex_ok'       'bad_error_example_asserts_ok' @('demo.add.x2')
         New-Test 't_unimplemented'   'bad_unimplemented'       @('demo.add.b1')
         New-Test 't_no_assertion'    'bad_no_assertion'        @('demo.add.b1')
         New-Test 't_tautology'       'bad_tautology'           @('demo.add.b1')
@@ -230,8 +271,16 @@ function Assert-Finding([string]$TestId, [string]$Kind) {
     }
 }
 
-function Assert-Clean([string]$TestId) {
-    $hit = @($report.findings | Where-Object { $_.test_id -eq $TestId })
+function Assert-Not-Analysed([string]$TestId) {
+    $hit = @($report.not_analysed | Where-Object { $_.test_id -eq $TestId })
+    if ($hit.Count -ge 1) { Write-Host ("  PASS  {0} -> not analysed" -f $TestId) -ForegroundColor Green }
+    else {
+        Write-Host ("  FAIL  {0} was analysed; it should be undiscoverable" -f $TestId) -ForegroundColor Red
+        $failures.Add("$TestId -> not analysed")
+    }
+}
+
+function Assert-Clean([string]$TestId) {    $hit = @($report.findings | Where-Object { $_.test_id -eq $TestId })
     if ($hit.Count -eq 0) { Write-Host ("  PASS  {0} not flagged" -f $TestId) -ForegroundColor Green }
     else {
         Write-Host ("  FAIL  {0} wrongly flagged: {1}" -f $TestId, ($hit.finding -join ', ')) -ForegroundColor Red
@@ -242,8 +291,8 @@ function Assert-Clean([string]$TestId) {
 Write-Host "Test quality gate self-test`n"
 Assert 'exit code' 1 $exit
 Assert 'verdict' 'fail' $report.verdict
-Assert 'tests analysed' 18 $report.summary.tests_analysed
-Assert 'tests skipped (phantom)' 1 $report.summary.tests_not_analysed
+Assert 'tests analysed' 21 $report.summary.tests_analysed
+Assert 'tests skipped (phantom)' 3 $report.summary.tests_not_analysed
 
 Write-Host "`n  Defects that must be caught:"
 Assert-Finding 't_unimplemented'   'unimplemented_test'
@@ -260,6 +309,15 @@ Assert-Finding 't_todo_msg'        'unimplemented_test'
 Assert-Finding 't_err_constructed' 'unchecked_error_path'
 Assert-Finding 't_oracle_outside'  'unbound_oracle'
 
+# Non-executable text is not evidence: a test that exists only inside a comment
+# is not a test, and an assertion inside a string literal never runs.
+Assert-Not-Analysed 't_commented'
+Assert-Not-Analysed 't_block_commented'
+Assert-Finding 't_stringly'        'no_assertion'
+
+# An example documented to fail is an error requirement, whatever its kind says.
+Assert-Finding 't_err_ex_ok'       'unchecked_error_path'
+
 Write-Host "`n  Healthy tests that must NOT be flagged:"
 Assert-Clean 't_good_value'
 Assert-Clean 't_good_error'
@@ -269,6 +327,7 @@ Assert-Clean 't_good_option'
 Assert-Clean 't_good_empty'
 Assert-Clean 't_good_raw'
 Assert-Clean 't_good_err_ex'
+Assert-Clean 't_good_err_named'
 
 # --- Every finding must carry its own fix ------------------------------------
 # A finding that only names a defect makes the next GenTest round a guessing

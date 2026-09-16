@@ -51,10 +51,29 @@ agent, and never decide what runs next.
 | `document.json` | **yes** | The feature ground truth. |
 | C# source root | **yes** | Original implementation — the behavioral oracle. |
 | `tests/manifest.json` + test sources | **yes** | What is claimed to be covered. |
-| Rust crate root | no | The migration. Omit to run coverage-only, pre-implementation. |
+| Rust crate root (`<run>/rust`) | no | The migration. Omit to run coverage-only, pre-implementation. |
 | `tests/golden/cases.json` | no | Differential cases. Absent ⇒ pass 2 is not possible. |
+| **C# differential runner** | no | An executable command that reads `cases.json` on stdin and writes the C# result for each case. Absent ⇒ pass 2's differential is `skipped`. See below. |
 | `reports/code-report.json` | no | Tests the Code agent stopped on. Present ⇒ pass 1d is **mandatory**. Supplied by the orchestrator, not by the Code agent. |
 | `focus` | no | A subset of `feature.id` values to restrict verification to. |
+
+**The C# differential runner is an input, not an assumption.** Nothing in this
+repository ships one, and no agent in this pipeline creates one — the C# side of
+a differential run has to be built against the original source by whoever owns
+it, and the orchestrator must hand you the command to invoke. Treat it exactly
+like any other optional input:
+
+- **Given a runner command** — run pass 2's differential, record
+  `passes_run.differential: "ran"`, and emit one `golden_results[]` entry per
+  case (`case_id`, `csharp`, `rust`, `status`).
+- **Not given one** — record `passes_run.differential: "skipped"` and state in
+  `blockers[]` that no C# runner was supplied. You may **not** claim
+  `coverage_level: "parity-checked"`; `Check-ParityReport.ps1` rejects that claim
+  when the differential did not run, so inventing one fails the gate.
+
+Never substitute your own reading of the C# for an execution of it. "I traced the
+method and it returns 3" is a code review, not a differential, and the whole
+point of this pass is that it is not a judgment.
 
 Everything you receive is **read-only**, with exactly one exception: pass 2b
 mutates a **scratch copy** of the Rust crate in a temporary directory, never the
@@ -84,6 +103,7 @@ yourself:
 ```powershell
 ./tools/Check-Coverage.ps1 -DocumentPath <document.json> `
                            -ManifestPath <tests/manifest.json> `
+                           -TestsRoot <run>/rust `
                            -ReportPath <reports/coverage.json>
 ```
 
@@ -113,6 +133,7 @@ Translate its findings into your report's gaps, preserving its severities:
 ```powershell
 ./tools/Check-TestQuality.ps1 -DocumentPath <document.json> `
                               -ManifestPath <tests/manifest.json> `
+                              -TestsRoot <run>/rust `
                               -ReportPath <reports/quality.json>
 ```
 
@@ -159,14 +180,23 @@ Then rule:
 
 | Ruling | When | Emit |
 | --- | --- | --- |
-| `test_wrong` | The test contradicts the document or the C# original. | `required_tests` entry, `reason: incorrect_test`, with the corrected assertion spelled out. |
+| `test_wrong` | The test contradicts the document or the C# original. | `ref_id` on the adjudication **and** a `required_tests` entry for that `ref_id`, `reason: incorrect_test`, with the corrected assertion spelled out. |
 | `code_wrong` | The test matches the document; the implementation does not. | `next_actions` entry for `code`. |
-| `document_wrong` | The document is silent or self-contradictory and the test guessed. | `gaps` entry, `kind: document_gap`, plus a `next_actions` entry for `requirements`. |
+| `document_wrong` | The document is silent or self-contradictory and the test guessed. | `route` on the adjudication, a `gaps` entry with `kind: document_gap`, plus a `next_actions` entry for `requirements`. |
 | `rejected` | The entry lacks `document_says` or `csharp_does`. | `next_actions` entry for `code` asking for the missing evidence. |
 
-Record every ruling in `adjudications[]` with the evidence you used. An
-unruled `failing_tests` entry is a blocker: report `verdict: blocked` rather than
-passing a run whose known failures you did not rule on.
+Record every ruling in `adjudications[]` with `test_id`, the `ruling`, and the
+`evidence` you used — all three are mandatory and `Check-ParityReport.ps1`
+rejects a ruling missing any of them. An unruled `failing_tests` entry is a
+blocker: report `verdict: blocked` rather than passing a run whose known failures
+you did not rule on.
+
+**A ruling that discards work must say who picks it up.** Striking a test out
+does not cover its requirement, so `test_wrong` without a `ref_id` and a matching
+`incorrect_test` work order reports success while the Code agent stays blocked on
+the same test — a loop that terminates without converging. Likewise
+`document_wrong` without a `route` leaves the defect with nowhere to go. The gate
+enforces both.
 
 A `test_wrong` ruling is the one case where GenTest is asked to **change an
 existing test rather than add one**. Say so explicitly in the entry, and keep the
@@ -205,15 +235,22 @@ reason your way through this pass when you can compute it.
 
 ### Pass 2 — Differential execution and falsifiability
 
-This is where coverage stops being a claim. It requires both a Rust crate and
-golden cases; if either was not supplied, record the pass as not run and continue
-— and say plainly in your summary that coverage was **not** proven, only counted.
+This is where coverage stops being a claim. It requires a Rust crate, golden
+cases, **and a C# differential runner command from the orchestrator**; if any of
+the three was not supplied, record the pass as not run and continue — and say
+plainly in your summary that coverage was **not** proven, only counted.
 
 **2a. Differential execution.** Finds behavioral divergence that no amount of
 reading can find.
 
-1. Build the C# side and run the whole batch:
-   `dotnet run --project Harness -- --cases <golden/cases.json> --out csharp-results.json`.
+1. Run the whole batch through the **C# runner command you were given**:
+   `<csharp_runner> --cases <golden/cases.json> --out csharp-results.json`.
+   You do not write this runner, and you do not go looking for one. If the
+   orchestrator supplied none, set `passes_run.differential: "skipped"`, add
+   "no C# differential runner supplied" to `blockers[]`, and skip to 2b. If the
+   command was supplied but fails to build or run, set
+   `passes_run.differential: "error"` and record the output verbatim. In both
+   cases `coverage_level` may not exceed `substantive`.
 2. Build the Rust side and run the same batch through its harness binary:
    `--cases <golden/cases.json> --out rust-results.json`. Both runners take the
    same file and emit the same `{ "results": { "<case_id>": ... } }` envelope, so
@@ -222,8 +259,13 @@ reading can find.
 3. For each golden case, compare the two `results` entries, applying the declared
    `normalization`. A case present on one side and absent on the other is a
    mismatch, not a skip.
-4. Record every difference as a `mismatch` with both raw outputs, a minimal
-   `diff` string, and a `likely_cause` grounded in code you actually read.
+4. Record every case in `golden_results[]` — `case_id`, the `csharp` output, the
+   `rust` output, and `status` of `match`, `mismatch`, or `error` — and every
+   difference additionally as a `mismatch` with both raw outputs, a minimal
+   `diff` string, and a `likely_cause` grounded in code you actually read. Every
+   `mismatch` status must have its matching `mismatches[]` entry; the gate checks
+   this, because a result table that records a divergence the report never raises
+   is worse than no table.
 
 Compare error paths as well as happy paths: a C# `ArgumentException` that becomes
 a Rust panic is a `critical` mismatch even though both "fail".

@@ -42,7 +42,7 @@
         { "id": "calculator.add.b3", "statement": "Adding zero returns the other operand unchanged." }
       ],
       "errors": [
-        { "id": "calculator.add.e1", "condition": "the exact sum is outside the decimal range", "result": "OverflowException" }
+        { "id": "calculator.add.e1", "condition": "the sum, after rounding to decimal's 28-29 significant digits, is outside the decimal range; an excess that vanishes under that rounding returns decimal.MaxValue instead of throwing, so decimal.MaxValue + 0.1 is MaxValue while decimal.MaxValue + 1 throws", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.add.i1", "statement": "Decimal precision is preserved exactly: 0.1 + 0.2 is 0.3, not a binary-float approximation of it." }
@@ -72,7 +72,7 @@
         { "id": "calculator.subtract.b3", "statement": "Subtracting two negative operands follows ordinary signed arithmetic." }
       ],
       "errors": [
-        { "id": "calculator.subtract.e1", "condition": "the exact difference is outside the decimal range", "result": "OverflowException" }
+        { "id": "calculator.subtract.e1", "condition": "the difference, after rounding to decimal's 28-29 significant digits, is outside the decimal range; an excess that vanishes under that rounding returns the boundary value instead of throwing", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.subtract.i1", "statement": "Fractional operands keep their exact scale: 3.75 - 2.5 is 1.25." }
@@ -102,10 +102,10 @@
         { "id": "calculator.multiply.b3", "statement": "The sign of the result follows the signs of the operands." }
       ],
       "errors": [
-        { "id": "calculator.multiply.e1", "condition": "the exact product is outside the decimal range", "result": "OverflowException" }
+        { "id": "calculator.multiply.e1", "condition": "the product, after rounding to decimal's 28-29 significant digits, is outside the decimal range; a product too small to represent rounds to 0 rather than throwing", "result": "OverflowException" }
       ],
       "invariants": [
-        { "id": "calculator.multiply.i1", "statement": "The scale of the product is the sum of the operand scales: 1.25 * 2.5 is 3.125." }
+        { "id": "calculator.multiply.i1", "statement": "The scale of the product is the sum of the operand scales while that total fits decimal's 28-29 significant digits: 1.25 * 2.5 is 3.125. Beyond it the result is rounded to nearest rather than kept exactly, so a product of two sufficiently small operands (1e-28 * 1e-28) rounds to 0 instead of overflowing or preserving scale." }
       ],
       "examples": [
         { "id": "calculator.multiply.x1", "input": { "left": "4", "right": "3" }, "expected": "12" },
@@ -134,7 +134,7 @@
       ],
       "errors": [
         { "id": "calculator.divide.e1", "condition": "divisor is zero, for any dividend including zero and negatives", "result": "DivideByZeroException with message 'Cannot divide by zero.'" },
-        { "id": "calculator.divide.e2", "condition": "the exact quotient is outside the decimal range, such as decimal.MaxValue / 0.1", "result": "OverflowException" }
+        { "id": "calculator.divide.e2", "condition": "the quotient, after rounding to decimal's 28-29 significant digits, is outside the decimal range, such as decimal.MaxValue / 0.1", "result": "OverflowException" }
       ],
       "invariants": [
         { "id": "calculator.divide.i1", "statement": "The zero-divisor check precedes the division, so the operation never relies on hardware division-by-zero behaviour." }

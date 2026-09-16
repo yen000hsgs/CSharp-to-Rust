@@ -173,11 +173,124 @@ function Get-BalancedSpan([string]$Text, [int]$OpenIndex, [char]$Open, [char]$Cl
     return $null
 }
 
-function Get-TestSource([string]$Text, [string]$Fn) {
+# Blank out everything that is not executable Rust, preserving every index so
+# offsets found in a mask address the same character in the original text.
+# Without this, a `fn` inside a comment is discovered as a test and an
+# `assert_eq!` inside a string literal counts as an assertion -- prose passes as
+# evidence. Comments are always masked; -MaskStrings additionally blanks string
+# and char *contents*, keeping the delimiters so brace/paren balance is intact.
+function ConvertTo-MaskedRust([string]$Text, [switch]$MaskStrings) {
+    $n = $Text.Length
+    $buf = $Text.ToCharArray()
+    $blank = {
+        param([int]$From, [int]$To)
+        for ($k = [Math]::Max($From, 0); $k -lt $To -and $k -lt $n; $k++) {
+            if ($buf[$k] -ne "`n" -and $buf[$k] -ne "`r") { $buf[$k] = ' ' }
+        }
+    }
+    $isIdent = { param([int]$k) $k -ge 0 -and $k -lt $n -and ($Text[$k] -match '[A-Za-z0-9_]') }
+
+    $i = 0
+    while ($i -lt $n) {
+        $c = $Text[$i]
+
+        if ($c -eq '/' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '/') {
+            $end = $Text.IndexOf("`n", $i)
+            if ($end -lt 0) { $end = $n }
+            & $blank $i $end
+            $i = $end
+            continue
+        }
+        if ($c -eq '/' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '*') {
+            $start = $i
+            $cdepth = 0
+            while ($i + 1 -lt $n) {
+                if ($Text[$i] -eq '/' -and $Text[$i + 1] -eq '*') { $cdepth++; $i += 2; continue }
+                if ($Text[$i] -eq '*' -and $Text[$i + 1] -eq '/') {
+                    $cdepth--; $i += 2
+                    if ($cdepth -le 0) { break }
+                    continue
+                }
+                $i++
+            }
+            if ($i + 1 -ge $n) { $i = $n }
+            & $blank $start $i
+            continue
+        }
+
+        # Raw / byte strings: r"", r#".."#, b"", br#".."#. Only when the prefix
+        # does not continue an identifier, so `for_r` is not read as a prefix.
+        if (($c -eq 'r' -or $c -eq 'b') -and -not (& $isIdent ($i - 1))) {
+            $j = $i
+            if ($Text[$j] -eq 'b' -and $j + 1 -lt $n -and $Text[$j + 1] -eq 'r') { $j++ }
+            if ($Text[$j] -eq 'r') {
+                $j++
+                $hashes = 0
+                while ($j -lt $n -and $Text[$j] -eq '#') { $hashes++; $j++ }
+                if ($j -lt $n -and $Text[$j] -eq '"') {
+                    $terminator = '"' + ('#' * $hashes)
+                    $end = $Text.IndexOf($terminator, $j + 1)
+                    $contentEnd = if ($end -lt 0) { $n } else { $end }
+                    if ($MaskStrings) { & $blank ($j + 1) $contentEnd }
+                    $i = if ($end -lt 0) { $n } else { $end + $terminator.Length }
+                    continue
+                }
+            }
+            elseif ($Text[$i] -eq 'b' -and $i + 1 -lt $n -and $Text[$i + 1] -eq '"') {
+                $i++
+                $c = $Text[$i]
+            }
+        }
+
+        if ($c -eq '"') {
+            $start = $i + 1
+            $i++
+            while ($i -lt $n) {
+                if ($Text[$i] -eq '\') { $i += 2; continue }
+                if ($Text[$i] -eq '"') { break }
+                $i++
+            }
+            if ($MaskStrings) { & $blank $start ([Math]::Min($i, $n)) }
+            $i++
+            continue
+        }
+        if ($c -eq "'") {
+            # A char literal ('x', '\n', '\u{1F600}') or a lifetime ('a). Measure
+            # it explicitly rather than guessing a window.
+            $j = $i + 1
+            if ($j -lt $n -and $Text[$j] -eq '\') {
+                $j++
+                if ($j -lt $n -and $Text[$j] -eq 'u') {
+                    $close = $Text.IndexOf('}', $j)
+                    $j = if ($close -lt 0) { $n } else { $close + 1 }
+                }
+                else { $j++ }
+            }
+            elseif ($j -lt $n) { $j++ }
+            if ($j -lt $n -and $Text[$j] -eq "'") {
+                if ($MaskStrings) { & $blank ($i + 1) $j }
+                $i = $j + 1
+                continue
+            }
+            $i++   # a lifetime: nothing to mask
+            continue
+        }
+        $i++
+    }
+    return (-join $buf)
+}
+
+# $ScanText has comments and string contents blanked, so discovery cannot match
+# prose; $CodeText has only comments blanked, so extracted bodies keep the string
+# literals a test legitimately asserts against. Indices are identical in both.
+function Get-TestSource([string]$ScanText, [string]$CodeText, [string]$Fn) {
+    $Text = $ScanText
     $m = [regex]::Match($Text, "(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+" + [regex]::Escape($Fn) + "(?:\s*<[^>]*>)?\s*\(")
     if (-not $m.Success) { return $null }
 
-    # Walk backwards over contiguous attribute lines so #[should_panic] is visible.
+    # Walk backwards over contiguous attribute lines so #[should_panic] is
+    # visible. Comment lines are blank in the scan text, so a whitespace-only
+    # line is treated as a continuation rather than a stop.
     $lineStart = $Text.LastIndexOf("`n", [Math]::Max($m.Index - 1, 0)) + 1
     $attrStart = $lineStart
     while ($attrStart -gt 0) {
@@ -185,7 +298,7 @@ function Get-TestSource([string]$Text, [string]$Fn) {
         $prevStart = $prevEnd + 1
         if ($prevStart -lt 0) { break }
         $line = $Text.Substring($prevStart, $attrStart - $prevStart).Trim()
-        if ($line.StartsWith('#[') -or $line.StartsWith('//')) { $attrStart = $prevStart } else { break }
+        if ($line.StartsWith('#[') -or $line -eq '') { $attrStart = $prevStart } else { break }
     }
 
     $brace = $Text.IndexOf('{', $m.Index)
@@ -196,19 +309,23 @@ function Get-TestSource([string]$Text, [string]$Fn) {
     return [pscustomobject]@{
         Unparsable = $false
         Attributes = $Text.Substring($attrStart, $lineStart - $attrStart)
-        Body       = $Text.Substring($span.Start + 1, $span.End - $span.Start - 1)
+        Body       = $CodeText.Substring($span.Start + 1, $span.End - $span.Start - 1)
+        ScanBody   = $Text.Substring($span.Start + 1, $span.End - $span.Start - 1)
         Line       = ($Text.Substring(0, $m.Index) -split "`n").Count
     }
 }
 
-# Extract the argument text of every assertion macro call in a body.
-function Get-Assertions([string]$Body) {
+# Extract the argument text of every assertion macro call in a body. Macros are
+# located in the scan body (so `"assert_eq!(1, 1)"` inside a string is not one),
+# but the arguments are sliced out of the code body so real string literals
+# survive for the oracle check. The two bodies are index-identical.
+function Get-Assertions([string]$ScanBody, [string]$CodeBody) {
     $result = [System.Collections.Generic.List[object]]::new()
     $pattern = '\b(debug_assert_eq|debug_assert_ne|debug_assert|assert_matches|assert_eq|assert_ne|assert)\s*!\s*\('
-    foreach ($m in [regex]::Matches($Body, $pattern)) {
-        $open = $Body.IndexOf('(', $m.Index + $m.Length - 1)
-        $span = Get-BalancedSpan $Body $open '(' ')'
-        $argText = if ($span) { $Body.Substring($span.Start + 1, $span.End - $span.Start - 1) } else { '' }
+    foreach ($m in [regex]::Matches($ScanBody, $pattern)) {
+        $open = $ScanBody.IndexOf('(', $m.Index + $m.Length - 1)
+        $span = Get-BalancedSpan $ScanBody $open '(' ')'
+        $argText = if ($span) { $CodeBody.Substring($span.Start + 1, $span.End - $span.Start - 1) } else { '' }
         $result.Add([pscustomobject]@{ Macro = $m.Groups[1].Value; Args = $argText.Trim() })
     }
     return $result
@@ -265,8 +382,39 @@ function Get-ScalarLeaves($Value) {
 
 # --- Load inputs -------------------------------------------------------------
 
+# A document whose shape is wrong yields zero requirements, so every test in the
+# manifest maps to an unknown id and the gate has nothing to check. That is not a
+# clean bill of health -- it is unreadable input, and it must fail as such.
+function Assert-DocumentShape($Document, [string]$Path) {
+    $raw = Get-Prop $Document 'features'
+    # @($null) is an array of one $null, not an empty array -- the same trap the
+    # gate is being hardened against, so the nulls are filtered explicitly.
+    $features = @()
+    if ($null -ne $raw -and $raw -isnot [System.DBNull]) {
+        $features = @(@($raw) | Where-Object { $null -ne $_ -and $_ -isnot [System.DBNull] })
+    }
+    if ($features.Count -eq 0) {
+        Write-Host ("ERROR: Document '{0}' declares no requirements: 'features' is missing or empty." -f $Path) -ForegroundColor Red
+        if ($Document -is [System.Management.Automation.PSCustomObject]) {
+            $present = @($Document.PSObject.Properties.Name)
+            if ($present.Count -gt 0) {
+                Write-Host ("  Top-level keys present: {0}" -f ($present -join ', ')) -ForegroundColor Red
+            }
+        }
+        Write-Host "  Expected shape: { features: [ { id, behaviors, errors, invariants, examples } ] }." -ForegroundColor Red
+        exit 2
+    }
+    foreach ($f in $features) {
+        if ($null -eq $f -or $f -is [string] -or $f -is [System.ValueType]) {
+            Write-Host ("ERROR: Document '{0}' has a non-object entry in 'features'; each feature must be an object with an 'id'." -f $Path) -ForegroundColor Red
+            exit 2
+        }
+    }
+}
+
 $document = Read-Json $DocumentPath 'Document'
 $manifest = Read-Json $ManifestPath 'Manifest'
+Assert-DocumentShape $document $DocumentPath
 
 if (-not $TestsRoot) {
     $TestsRoot = Split-Path -Parent (Split-Path -Parent (Resolve-Path -LiteralPath $ManifestPath))
@@ -348,9 +496,14 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
         continue
     }
     if (-not $fileCache.ContainsKey($resolved)) {
-        $fileCache[$resolved] = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8
+        $raw = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8
+        $fileCache[$resolved] = [pscustomobject]@{
+            Code = ConvertTo-MaskedRust $raw
+            Scan = ConvertTo-MaskedRust $raw -MaskStrings
+        }
     }
-    $src = Get-TestSource $fileCache[$resolved] $fn
+    $cached = $fileCache[$resolved]
+    $src = Get-TestSource $cached.Scan $cached.Code $fn
     # A function that isn't there is phantom coverage; Check-Coverage.ps1 owns that.
     if (-not $src) {
         Add-NotAnalysed $testId $file "function '$fn' not found in file (phantom; see the coverage gate)"
@@ -366,7 +519,10 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
 
     $analysed++
     $body = $src.Body
-    $stripped = ($body -replace '(?m)//.*$', '') -replace '(?s)/\*.*?\*/', ''
+    # Comments are already blanked by the mask; `$stripped` keeps its old name so
+    # the checks below read the same, but it is now lexically correct rather than
+    # a regex strip that also ate "http://" inside string literals.
+    $stripped = $src.ScanBody
     $compact = $stripped.Trim()
 
     # 1. Unimplemented. Match todo!/unimplemented! with or without a message --
@@ -377,7 +533,7 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
         continue
     }
 
-    $assertions = @(Get-Assertions $stripped)
+    $assertions = @(Get-Assertions $src.ScanBody $src.Body)
     $shouldPanic = $src.Attributes -match '#\[\s*should_panic'
 
     # 2. No assertion at all. `matches!` is deliberately NOT an escape hatch: it
@@ -413,9 +569,32 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
     # for `Err(` also matches a helper that merely constructs one, so a test that
     # asserts *success* on an error requirement used to pass.
     $errorRefs = @($covers | Where-Object { $kindOf[[string]$_] -eq 'error' })
+
+    # An example whose documented outcome is an error is an error requirement
+    # too. Keying only on `kind` let `assert_eq!(result, Ok(5))` satisfy an
+    # example documenting OverflowException: check 5 skips error examples, so
+    # nothing at all checked that the call failed.
+    $errorNames = [System.Collections.Generic.List[string]]::new()
+    foreach ($ref in @($covers | Where-Object { $kindOf[[string]$_] -eq 'example' })) {
+        if (-not $expectedOf.ContainsKey([string]$ref)) { continue }
+        $err = Get-Prop $expectedOf[[string]$ref] 'error'
+        if (-not $err) { continue }
+        $errorRefs += $ref
+        $named = if ($err -is [string]) { $err } else { [string](Get-Prop $err 'type') }
+        if ($named) { $errorNames.Add($named) }
+    }
+    $errorRefs = @($errorRefs | Select-Object -Unique)
+
     if ($errorRefs.Count -gt 0) {
         $errorPattern = '\.is_err\s*\(|\.unwrap_err\s*\(|\.expect_err\s*\(|\bErr\s*(\(|::)'
         $assertsError = @($assertions | Where-Object { $_.Args -match $errorPattern }).Count -gt 0
+        # A test driving the port through the differential harness sees JSON, not
+        # a Result, so it asserts the documented error *name*. That is a genuine
+        # error assertion and must not be reported as a missing one.
+        if (-not $assertsError -and $errorNames.Count -gt 0) {
+            $argsJoined = ($assertions | ForEach-Object { $_.Args }) -join ' | '
+            $assertsError = @($errorNames | Where-Object { $argsJoined.Contains($_) }).Count -gt 0
+        }
         # Outside an assertion these still panic on the wrong variant.
         $panicsOnOk = $stripped -match '\.unwrap_err\s*\(|\.expect_err\s*\('
         $checksError = $shouldPanic -or $assertsError -or $panicsOnOk
@@ -432,8 +611,8 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
 
         # An example whose expectation is a C# exception name cannot bind to a
         # Rust test body: the port asserts a typed error variant, not the .NET
-        # type name. Pass 4 already proved an error is asserted; demanding the
-        # C# identifier here is a guaranteed false accusation.
+        # type name. Check 4 now covers these -- it treats an error example as an
+        # error requirement -- so skipping here leaves nothing unchecked.
         if ((Get-Prop $expected 'error')) { continue }
 
         # Normalisation is deliberately conservative. Lower-casing and stripping

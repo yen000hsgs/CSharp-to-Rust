@@ -115,33 +115,45 @@ Before implementing any behavior, lay down the whole crate's shape:
 4. Get `cargo build` green with `todo!()` bodies.
 
 Make cargo discover the generated tests **without moving or editing them**. The
-manifest's `file` paths must keep resolving from the crate root, or both gates
-report every entry as `phantom` and the suite silently measures nothing.
+crate root is `<run>/rust` and every manifest `file` path is relative to it (see
+*Run layout* in `docs/contracts.md`). Those paths must keep resolving from there,
+or both gates report every entry as `phantom` and the suite silently measures
+nothing.
 
 Cargo only compiles top-level `.rs` files under `tests/`, so a nested
-`tests/unit/storage_blob_upload.rs` is never built on its own. Two mechanisms
+`tests/functional/blob_upload.rs` is never built on its own. Two mechanisms
 cover this, and neither one relocates a file:
 
-- **Functional and e2e** are integration tests against the public API. GenTest
-  ships the root wrappers (`tests/functional.rs`, `tests/e2e.rs`) that `#[path]`-
-  include the nested files. If a wrapper is missing or does not list a file the
-  manifest claims, add the missing `mod` line to the wrapper and say so in the
-  report.
+- **Functional and e2e** are integration tests against the public API, and live
+  under `<run>/rust/tests/`. GenTest ships the root wrappers
+  (`tests/functional.rs`, `tests/e2e.rs`) that `#[path]`-include any nested
+  files. If a wrapper is missing or does not list a file the manifest claims,
+  add the missing `mod` line to the wrapper and say so in the report.
 - **Unit tests** need private access, which an integration crate does not have,
-  so they cannot run from `tests/`. Include them from inside the module they
-  exercise:
+  so they cannot live under `tests/` at all. GenTest writes them under
+  `<run>/rust/src/`; include them from the module they exercise, with a path
+  relative to *that module's own file*:
 
   ```rust
-  // src/storage/blob.rs
+  // rust/src/storage/blob.rs  ->  includes rust/src/storage/blob_tests.rs
   #[cfg(test)]
-  #[path = "../../tests/unit/storage_blob_upload.rs"]
-  mod storage_blob_upload_tests;
+  #[path = "blob_tests.rs"]
+  mod blob_tests;
+  ```
+
+  For a single crate-wide unit file the manifest names as `src/tests_unit.rs`:
+
+  ```rust
+  // rust/src/lib.rs
+  #[cfg(test)]
+  #[path = "tests_unit.rs"]
+  mod tests_unit;
   ```
 
   Adding that `mod` line is editing *your* source, not the test, so it is
   allowed. The test file stays exactly where the manifest says it is.
 
-Never move, rename, or rewrite a file under `tests/`. If a test genuinely cannot
+Never move, rename, or rewrite a generated test file. If a test genuinely cannot
 be included, record it in `failing_tests` — do not make the path problem
 disappear by relocating the evidence.
 
@@ -173,8 +185,12 @@ pipeline silently loses its only C#-vs-Rust comparison.
 
 Build it alongside the crate:
 
-1. Add a `harness` binary target with the **same CLI and the same output
-   envelope as the C# runner** — it is already written, so it is the spec:
+1. Add a `harness` binary target implementing the CLI and output envelope in
+   `docs/contracts.md` — **that document is the spec.** A C# runner may or may
+   not exist for this migration; it is an optional input the orchestrator hands
+   to the parity verifier, not something you can assume is sitting in the repo to
+   copy. Conform to the written protocol and the two sides will diff whenever the
+   C# side does turn up.
 
    ```
    harness --cases <cases.json> [--out <results.json>]
@@ -196,16 +212,18 @@ Build it alongside the crate:
    the `feature_id` per `docs/contracts.md`: `harness::` plus each dot-segment in
    snake_case. `storage.blob.upload` → `harness::storage::blob::upload`. Do not
    invent names; a name you invent will not match the one GenTest wrote.
-3. Mirror the C# dispatcher's shape exactly: same input field names (including
-   `seed`), same output field names, same value encodings. A field the two sides
-   spell differently reads as a behavioral mismatch and sends the verifier
-   hunting a bug that does not exist. Read the protocol in `docs/contracts.md`,
-   and the C# runner that implements it, before you write yours.
+3. Follow the protocol in `docs/contracts.md` to the letter: the input field
+   names it specifies (including `seed`), the output field names, the value
+   encodings. A field the two sides spell differently reads as a behavioral
+   mismatch and sends the verifier hunting a bug that does not exist. Where the
+   contract leaves an encoding open, derive it from the C# source you are porting
+   and record the choice in your report so the C# runner's author can match it.
 4. Map errors onto the `{ "ok": false, "error": { "type", "message" } }` shape
-   rather than letting a panic escape, and use the **same `type` strings** the C#
-   side emits. A case that raises a domain error is still a completed case: the
-   process exits 0 and the error is data. A crash and a documented failure are
-   not the same result.
+   rather than letting a panic escape, and use the **C# exception type names**
+   from the document's `error` entries as the `type` strings, so the two sides
+   agree without coordination. A case that raises a domain error is still a
+   completed case: the process exits 0 and the error is data. A crash and a
+   documented failure are not the same result.
 5. An unknown entry name must produce an `ok: false` result for that case, never
    a silent empty object and never a process abort that loses the other cases.
 
