@@ -51,7 +51,7 @@
         { "id": "calculator.add.x1", "input": { "left": "2", "right": "3" }, "expected": "5" },
         { "id": "calculator.add.x2", "input": { "left": "-2", "right": "3" }, "expected": "1" },
         { "id": "calculator.add.x3", "input": { "left": "0.1", "right": "0.2" }, "expected": "0.3" },
-        { "id": "calculator.add.x4", "input": { "left": "decimal.MaxValue", "right": "1" }, "expected": { "throws": "OverflowException" } }
+        { "id": "calculator.add.x4", "input": { "left": "decimal.MaxValue", "right": "1" }, "expected": { "error": "OverflowException" } }
       ],
       "visibility": "public",
       "source_refs": ["samples/Calculator/Calculator.cs#L5"]
@@ -81,7 +81,7 @@
         { "id": "calculator.subtract.x1", "input": { "left": "7", "right": "3" }, "expected": "4" },
         { "id": "calculator.subtract.x2", "input": { "left": "2", "right": "5" }, "expected": "-3" },
         { "id": "calculator.subtract.x3", "input": { "left": "3.75", "right": "2.5" }, "expected": "1.25" },
-        { "id": "calculator.subtract.x4", "input": { "left": "decimal.MinValue", "right": "1" }, "expected": { "throws": "OverflowException" } }
+        { "id": "calculator.subtract.x4", "input": { "left": "decimal.MinValue", "right": "1" }, "expected": { "error": "OverflowException" } }
       ],
       "visibility": "public",
       "source_refs": ["samples/Calculator/Calculator.cs#L7"]
@@ -111,7 +111,7 @@
         { "id": "calculator.multiply.x1", "input": { "left": "4", "right": "3" }, "expected": "12" },
         { "id": "calculator.multiply.x2", "input": { "left": "-4", "right": "3" }, "expected": "-12" },
         { "id": "calculator.multiply.x3", "input": { "left": "1.25", "right": "2.5" }, "expected": "3.125" },
-        { "id": "calculator.multiply.x4", "input": { "left": "decimal.MaxValue", "right": "2" }, "expected": { "throws": "OverflowException" } }
+        { "id": "calculator.multiply.x4", "input": { "left": "decimal.MaxValue", "right": "2" }, "expected": { "error": "OverflowException" } }
       ],
       "visibility": "public",
       "source_refs": ["samples/Calculator/Calculator.cs#L9"]
@@ -143,8 +143,8 @@
         { "id": "calculator.divide.x1", "input": { "dividend": "8", "divisor": "2" }, "expected": "4" },
         { "id": "calculator.divide.x2", "input": { "dividend": "8", "divisor": "-2" }, "expected": "-4" },
         { "id": "calculator.divide.x3", "input": { "dividend": "5", "divisor": "2" }, "expected": "2.5" },
-        { "id": "calculator.divide.x4", "input": { "dividend": "5", "divisor": "0" }, "expected": { "throws": "DivideByZeroException" } },
-        { "id": "calculator.divide.x5", "input": { "dividend": "decimal.MaxValue", "divisor": "0.1" }, "expected": { "throws": "OverflowException" } }
+        { "id": "calculator.divide.x4", "input": { "dividend": "5", "divisor": "0" }, "expected": { "error": "DivideByZeroException" } },
+        { "id": "calculator.divide.x5", "input": { "dividend": "decimal.MaxValue", "divisor": "0.1" }, "expected": { "error": "OverflowException" } }
       ],
       "visibility": "public",
       "source_refs": ["samples/Calculator/Calculator.cs#L11-L19"]
