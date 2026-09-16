@@ -68,10 +68,16 @@ write a wrapper that includes each file you generated:
 #[path = "functional/storage_blob_upload.rs"] mod storage_blob_upload;
 ```
 
-**Every test function needs a live `#[test]`.** A bare `fn`, an `#[ignore]`d
-test, or one behind `#[cfg(any())]` is a function cargo never runs, and both
-gates now say so: the coverage gate reports the entry as `phantom` with the
-registration defect named, and the quality gate raises `unregistered_test` or
+**Every test function needs a live `#[test]` and a signature libtest accepts.**
+A bare `fn`, an `#[ignore]`d test (in any form, including `#[ignore = "..."]`),
+or one behind `#[cfg(any())]` is a function cargo never runs. So is a test
+libtest refuses to register: `#[test] async fn`, `fn t(x: i32)`, or a
+non-lifetime generic like `fn t<T>()` — those are compile errors that take the
+whole crate down with them. Write `fn name()`; use `#[tokio::test]` if you
+genuinely need `async`, and `fn t<'a>()` is fine.
+
+Both gates enforce this: the coverage gate reports the entry as `phantom` with
+the defect named, and the quality gate raises `unregistered_test` or
 `disabled_test` (both critical) and refuses to analyse it. A test gated on a
 predicate the gates cannot evaluate — `#[cfg(feature = "...")]` — is recorded as
 an unknown, which blocks `substantive` for the whole suite. If you cannot cover a

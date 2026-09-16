@@ -288,7 +288,7 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
     # A function cargo never runs is not evidence of anything. This used to be
     # invisible: a bare `fn` or a #[cfg(any())] test earned full coverage and
     # `substantive_eligible: true` without ever executing.
-    $reg = Get-TestRegistration $src.Attributes
+    $reg = Get-TestRegistration $src.Attributes $src
     if ($reg.State -eq 'unregistered') {
         Add-Finding $testId $file $src.Line 'unregistered_test' 'critical' `
             "'$fn' is listed as a test but $($reg.Reason)." `

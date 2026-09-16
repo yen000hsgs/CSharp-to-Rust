@@ -221,7 +221,7 @@ function ConvertTo-MaskedRust([string]$Text, [switch]$MaskStrings) {
 # literals a test legitimately asserts against. Indices are identical in both.
 function Get-TestSource([string]$ScanText, [string]$CodeText, [string]$Fn) {
     $Text = $ScanText
-    $m = [regex]::Match($Text, "(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+" + [regex]::Escape($Fn) + "(?:\s*<[^>]*>)?\s*\(")
+    $m = [regex]::Match($Text, "(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?<const>const\s+)?(?<unsafe>unsafe\s+)?(?<async>async\s+)?fn\s+" + [regex]::Escape($Fn) + "(?:\s*<(?<gen>[^>]*)>)?\s*\(")
     if (-not $m.Success) { return $null }
 
     # Walk backwards over contiguous attribute lines so #[should_panic] is
@@ -237,6 +237,12 @@ function Get-TestSource([string]$ScanText, [string]$CodeText, [string]$Fn) {
         if ($line.StartsWith('#[') -or $line -eq '') { $attrStart = $prevStart } else { break }
     }
 
+    # The signature decides whether cargo can run this at all, so carry it out
+    # alongside the body rather than re-deriving it from the raw text later.
+    $paren = $m.Index + $m.Length - 1
+    $argSpan = Get-BalancedSpan $Text $paren '(' ')'
+    $params = if ($argSpan) { $Text.Substring($argSpan.Start + 1, $argSpan.End - $argSpan.Start - 1) } else { $null }
+
     $brace = $Text.IndexOf('{', $m.Index)
     if ($brace -lt 0) { return [pscustomobject]@{ Unparsable = $true } }
     $span = Get-BalancedSpan $Text $brace '{' '}'
@@ -247,35 +253,80 @@ function Get-TestSource([string]$ScanText, [string]$CodeText, [string]$Fn) {
         Attributes = $Text.Substring($attrStart, $lineStart - $attrStart)
         Body       = $CodeText.Substring($span.Start + 1, $span.End - $span.Start - 1)
         ScanBody   = $Text.Substring($span.Start + 1, $span.End - $span.Start - 1)
+        IsAsync    = $m.Groups['async'].Success
+        IsConst    = $m.Groups['const'].Success
+        Generics   = $m.Groups['gen'].Value
+        Params     = $params
         Line       = ($Text.Substring(0, $m.Index) -split "`n").Count
     }
 }
 
 
 
-# A manifest entry earns credit only if cargo would actually run it. Three
+# A manifest entry earns credit only if cargo would actually run it. Four
 # distinct answers matter, and collapsing them is what let phantom coverage in:
 #
-#   registered   -- carries #[test] (or a recognised async-test attribute) and
-#                   no attribute that switches it off.
-#   unregistered -- an ordinary `fn`. cargo never runs it; it is not a test.
-#   disabled     -- #[ignore], or a cfg predicate that is always false such as
-#                   #[cfg(any())]. Definitely not run.
+#   registered   -- carries #[test] (or a path-qualified async test attribute
+#                   such as #[tokio::test]), has a signature the harness
+#                   accepts, and no attribute that switches it off.
+#   unregistered -- an ordinary `fn`, or a `fn` whose signature libtest rejects.
+#                   Either way cargo never runs it as a test.
+#   disabled     -- #[ignore] in any form, or a cfg predicate that is always
+#                   false such as #[cfg(any())]. Definitely not run.
 #   unknown      -- gated on a cfg this tool cannot evaluate (a feature flag, a
 #                   target predicate). It may or may not run, and an unresolved
 #                   maybe must never be reported as proof.
-function Get-TestRegistration([string]$Attributes) {
+function Get-TestRegistration([string]$Attributes, [object]$Signature) {
     $attrs = if ($Attributes) { $Attributes } else { '' }
 
-    $isTest = $attrs -match '#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|tokio\s*::\s*test|async_std\s*::\s*test)\s*(?:\(|\])'
-    if (-not $isTest) {
+    # A bare `test` is libtest's own attribute; anything path-qualified
+    # (`tokio::test`, `async_std::test`, `rstest`-style wrappers) is a proc
+    # macro that generates the real test around the body, which is what makes
+    # an `async fn` legal.
+    $testAttr = [regex]::Match($attrs, '#\[\s*(?<path>(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*)test\s*(?:\(|\]|=)')
+    if (-not $testAttr.Success) {
         return [pscustomobject]@{
             State  = 'unregistered'
             Reason = 'the function carries no #[test] attribute, so cargo never runs it'
         }
     }
+    $viaProcMacro = $testAttr.Groups['path'].Value -ne ''
 
-    if ($attrs -match '#\[\s*ignore\s*[\](]') {
+    # libtest requires `fn name()` -- no arguments, no non-lifetime generics,
+    # not async, not const. These are hard compile errors under `cargo test`,
+    # not silent skips, so crediting them is worse than missing them: the crate
+    # does not build and the requirement is reported as covered anyway.
+    if ($Signature) {
+        $defect = $null
+        if ($Signature.IsConst) {
+            $defect = 'it is declared `const fn`, which libtest cannot register'
+        }
+        elseif ($Signature.IsAsync -and -not $viaProcMacro) {
+            $defect = 'it is an `async fn` under a plain #[test], which libtest rejects; an async test needs a runtime attribute such as #[tokio::test]'
+        }
+        elseif ($null -ne $Signature.Params -and $Signature.Params.Trim() -ne '') {
+            $defect = "it takes arguments (`($($Signature.Params.Trim()))`), and libtest only runs zero-argument functions"
+        }
+        else {
+            # Lifetimes are erased and are the one generic libtest tolerates.
+            $bad = @(
+                foreach ($p in ($Signature.Generics -split ',')) {
+                    $t = $p.Trim()
+                    if ($t -ne '' -and -not $t.StartsWith("'")) { $t }
+                }
+            )
+            if ($bad.Count -gt 0) {
+                $defect = "it is generic over $($bad -join ', '), and libtest only runs functions with no non-lifetime generic parameters"
+            }
+        }
+        if ($defect) {
+            return [pscustomobject]@{ State = 'unregistered'; Reason = "$defect, so cargo never runs it as a test" }
+        }
+    }
+
+    # #[ignore], #[ignore = "reason"] and #[ignore(...)] are all the same
+    # instruction: do not run this by default.
+    if ($attrs -match '#\[\s*ignore\s*[\](=]') {
         return [pscustomobject]@{ State = 'disabled'; Reason = 'the test is marked #[ignore]' }
     }
 

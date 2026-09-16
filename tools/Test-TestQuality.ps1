@@ -91,6 +91,22 @@ fn good_raw_string_test() {
     assert_ne!(delim, ')');
 }
 
+// Lifetimes are erased, so libtest accepts them: this must NOT be mistaken for
+// the non-lifetime generics it rejects.
+#[test]
+fn good_lifetime_test<'a>() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+// A path-qualified test attribute is a proc macro that builds the real test
+// around the body, which is what makes `async fn` legal here.
+#[tokio::test]
+async fn good_async_runtime_test() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
 #[test]
 fn good_error_example_test() {
     let result = add("", 1, "1.00");
@@ -223,6 +239,35 @@ fn bad_ignored_test() {
     assert_eq!(result.total, "59.97");
 }
 
+// Every one of these carries #[test] but has a signature libtest refuses, so
+// `cargo test` fails to compile rather than running them. Crediting them is
+// worse than missing them: the crate does not build and the requirement is
+// reported as covered anyway.
+#[test]
+#[ignore = "slow"]
+fn bad_ignored_with_reason() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+#[test]
+fn bad_generic_test<T: Default>() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+#[test]
+async fn bad_async_test() {
+    let result = add("widget-1", 3, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
+#[test]
+fn bad_arg_test(qty: i64) {
+    let result = add("widget-1", qty, "19.99");
+    assert_eq!(result.total, "59.97");
+}
+
 // Gated on a predicate this gate cannot evaluate: it may or may not run, which
 // is an UNKNOWN and must not be promoted to proof.
 #[cfg(feature = "slow")]
@@ -277,6 +322,12 @@ function New-Test([string]$id, [string]$fn, [string[]]$covers) {
         New-Test 't_cfg_disabled'    'bad_cfg_disabled'        @('demo.add.b1')
         New-Test 't_ignored'         'bad_ignored_test'        @('demo.add.b1')
         New-Test 't_unknown_cfg'     'unknown_cfg_test'        @('demo.add.b1')
+        New-Test 't_ignore_reason'   'bad_ignored_with_reason' @('demo.add.b1')
+        New-Test 't_generic'         'bad_generic_test'        @('demo.add.b1')
+        New-Test 't_async'           'bad_async_test'          @('demo.add.b1')
+        New-Test 't_args'            'bad_arg_test'            @('demo.add.b1')
+        New-Test 't_good_lifetime'   'good_lifetime_test'      @('demo.add.b1')
+        New-Test 't_good_async'      'good_async_runtime_test' @('demo.add.b1')
     )
     coverage_claim = [pscustomobject]@{ requirements_total = 5; requirements_covered = 5; waived = @() }
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $work 'tests\manifest.json') -Encoding UTF8
@@ -325,8 +376,8 @@ function Assert-Clean([string]$TestId) {    $hit = @($report.findings | Where-Ob
 Write-Host "Test quality gate self-test`n"
 Assert 'exit code' 1 $exit
 Assert 'verdict' 'fail' $report.verdict
-Assert 'tests analysed' 21 $report.summary.tests_analysed
-Assert 'tests skipped (phantom)' 7 $report.summary.tests_not_analysed
+Assert 'tests analysed' 23 $report.summary.tests_analysed
+Assert 'tests skipped (phantom)' 11 $report.summary.tests_not_analysed
 
 Write-Host "`n  Defects that must be caught:"
 Assert-Finding 't_unimplemented'   'unimplemented_test'
@@ -357,6 +408,17 @@ Assert-Not-Analysed 't_unknown_cfg'
 Assert-Finding 't_unregistered' 'unregistered_test'
 Assert-Finding 't_cfg_disabled' 'disabled_test'
 Assert-Finding 't_ignored' 'disabled_test'
+
+# Carrying #[test] is not enough: libtest refuses these signatures, so `cargo
+# test` fails to compile instead of running them.
+Assert-Not-Analysed 't_ignore_reason'
+Assert-Not-Analysed 't_generic'
+Assert-Not-Analysed 't_async'
+Assert-Not-Analysed 't_args'
+Assert-Finding 't_ignore_reason' 'disabled_test'
+Assert-Finding 't_generic' 'unregistered_test'
+Assert-Finding 't_async' 'unregistered_test'
+Assert-Finding 't_args' 'unregistered_test'
 Assert-Finding 't_stringly'        'no_assertion'
 
 # An example documented to fail is an error requirement, whatever its kind says.
@@ -372,6 +434,8 @@ Assert-Clean 't_good_empty'
 Assert-Clean 't_good_raw'
 Assert-Clean 't_good_err_ex'
 Assert-Clean 't_good_err_named'
+Assert-Clean 't_good_lifetime'
+Assert-Clean 't_good_async'
 
 # --- Every finding must carry its own fix ------------------------------------
 # A finding that only names a defect makes the next GenTest round a guessing

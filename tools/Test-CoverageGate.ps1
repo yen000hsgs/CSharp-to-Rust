@@ -126,14 +126,23 @@ $cleanRust = Get-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Raw
 $degraded = $cleanRust `
     -replace "#\[test\]\r?\nfn covers_req_1\(\)", "fn covers_req_1()" `
     -replace "#\[test\]\r?\nfn covers_req_2\(\)", "#[cfg(any())]`n#[test]`nfn covers_req_2()" `
-    -replace "#\[test\]\r?\nfn covers_req_3\(\)", "// fn covers_req_3() lives in a comment`n#[test]`nfn other_name_3()"
+    -replace "#\[test\]\r?\nfn covers_req_3\(\)", "// fn covers_req_3() lives in a comment`n#[test]`nfn other_name_3()" `
+    -replace "#\[test\]\r?\nfn covers_req_4\(\)", "#[test]`n#[ignore = `"slow`"]`nfn covers_req_4()" `
+    -replace "#\[test\]\r?\nfn covers_req_5\(\)", "#[test]`nasync fn covers_req_5()" `
+    -replace "#\[test\]\r?\nfn covers_req_6\(\)", "#[test]`nfn covers_req_6<T>()"
 Set-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Value $degraded -Encoding UTF8
 
 $r = Invoke-Gate $root $DocumentPath
 Assert 'unrunnable' 'exit code' 1 $r.ExitCode
-Assert 'unrunnable' 'phantom' 3 $r.Report.summary.phantom
+Assert 'unrunnable' 'phantom' 6 $r.Report.summary.phantom
 Assert 'unrunnable' 'reason names the registration defect' $true `
     (@($r.Report.phantom | Where-Object { $_.reason -match 'no #\[test\]|always false' }).Count -eq 2)
+# Carrying #[test] is not enough -- libtest refuses these three signatures, so
+# `cargo test` would fail to compile rather than run them.
+Assert 'unrunnable' 'ignore-with-reason is disabled' $true `
+    (@($r.Report.phantom | Where-Object { $_.reason -match '#\[ignore\]' }).Count -eq 1)
+Assert 'unrunnable' 'async and generic signatures rejected' $true `
+    (@($r.Report.phantom | Where-Object { $_.reason -match 'async fn|generic over' }).Count -eq 2)
 
 Set-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Value $cleanRust -Encoding UTF8
 
@@ -305,7 +314,7 @@ Assert 'schema-shaped' 'covered' $allIds.Count $r.Report.summary.requirements_co
 
 $root = New-Case 'exotic-fns'
 $exotic = @(
-    "#[test]`nfn generic_test<T: Default>() { assert_eq!(1, 1); }`n",
+    "#[test]`nfn lifetime_test<'a>() { assert_eq!(1, 1); }`n",
     "#[test]`npub(crate) fn scoped_test() { assert_eq!(1, 1); }`n"
 ) -join "`n"
 Set-Content -LiteralPath (Join-Path $root 'tests\unit\all.rs') -Value $exotic -Encoding UTF8
@@ -316,7 +325,7 @@ $twoIds = @($childIds | Select-Object -First 2)
         [pscustomobject]@{
             test_id = 'e_1'; feature_id = ($twoIds[0] -replace '\.[bexi]\d+$', '')
             covers = @($twoIds[0]); tier = 'unit'; assertion_kind = 'value'
-            file = 'tests/unit/all.rs'; test_fn = 'generic_test'
+            file = 'tests/unit/all.rs'; test_fn = 'lifetime_test'
             rationale = 'self-test'; status = 'expected_fail_until_implemented'
         },
         [pscustomobject]@{
@@ -330,6 +339,10 @@ $twoIds = @($childIds | Select-Object -First 2)
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root 'tests\manifest.json') -Encoding UTF8
 
 $r = Invoke-Gate $root $DocumentPath
+# An unusual signature is not the same as an unrunnable one. A lifetime generic
+# and a `pub(crate)` test both run; the scanner must not reject them just for
+# looking exotic. (This case used to assert the same of `fn t<T: Default>()`,
+# which libtest actually refuses -- that expectation was the bug.)
 Assert 'exotic-fns' 'phantom' 0 $r.Report.summary.phantom
 
 # --- 7. tool-computed work order ---------------------------------------------

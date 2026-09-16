@@ -290,7 +290,7 @@ foreach ($test in (Get-Prop $manifest 'tests')) {
         # written in a comment, and never asked whether the function was a test.
         $src = Get-TestSource $cached.Scan $cached.Code $fn
         if ($src -and -not $src.Unparsable) {
-            $reg = Get-TestRegistration $src.Attributes
+            $reg = Get-TestRegistration $src.Attributes $src
             switch ($reg.State) {
                 'registered' { $fnFound = $true }
                 'unknown'    { $fnFound = $true; $unknownReason = $reg.Reason }

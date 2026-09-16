@@ -758,6 +758,26 @@ every other unknown, forces `substantive_eligible: false` rather than being
 resolved in the suite's favour. The coverage gate reports the same entries as
 `phantom` with the registration defect named in `reason`.
 
+**Carrying `#[test]` is not enough — the signature has to be one libtest
+accepts.** These are hard compile errors, not silent skips, so crediting them is
+worse than missing them: the crate does not build and the requirement is reported
+as covered anyway.
+
+| Signature | Verdict |
+| --- | --- |
+| `fn t()` | runs |
+| `fn t<'a>()` | runs — lifetimes are erased, and are the one generic libtest tolerates |
+| `#[tokio::test] async fn t()` | runs — a *path-qualified* test attribute is a proc macro that builds the real test around the body, which is what makes `async` legal |
+| `#[test] async fn t()` | rejected — plain `#[test]` cannot drive a future |
+| `fn t(x: i32)` | rejected — libtest only calls zero-argument functions |
+| `fn t<T>()`, `fn t<const N: usize>()` | rejected — no non-lifetime generic parameters |
+| `const fn t()` | rejected |
+
+`#[ignore]`, `#[ignore = "reason"]` and `#[ignore(...)]` are all the same
+instruction and all count as `disabled`. An unusual signature is not the same as
+an unrunnable one, and the gates must not reject `pub(crate) fn` or a lifetime
+generic merely for looking exotic.
+
 Both gates share `tools/RustLex.ps1` for this. They used to disagree — the
 quality gate masked comments and strings while the coverage gate ran a raw regex
 over the file, so a function name written in a comment satisfied one and not the
