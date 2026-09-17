@@ -1,6 +1,35 @@
 # CSharp-to-Rust
 A tool to convert C# code to Rust
 
+## Extraction and requirements agents
+
+The [C# extractor](.agents/agents/csharp-extractor.agent.md) uses a required
+Roslyn helper to collect compiler facts, then writes a source-backed report
+for the orchestrator. Full compiler JSON stays on disk; bounded views keep
+agent input focused. New snapshots omit the unused assembly catalog without
+changing compiler binding or actual source dependency relationships.
+
+The [requirements collector](.agents/agents/requirements-collector.agent.md)
+uses that evidence to author compact behavioral requirements in `document.json`.
+Its `document.context.json` companion retains snapshot association, evidence
+links, coverage, and unresolved decisions. The orchestrator must enforce
+`--require-ready` before dispatching downstream work; structural validation
+alone does not establish semantic parity.
+
+Both agents have Copilot discovery entry points under `.github\agents` and
+canonical definitions and skills under `.agents`. See
+[extractor usage](docs/extractor.md) and
+[collector usage](docs/requirements-collector.md) for assignments and helper
+commands.
+
+Build and exercise both helpers and the calculator sample from the repository
+root with the .NET 8 SDK (or a newer SDK with the .NET 8 runtime):
+
+```powershell
+dotnet build CSharpToRust.sln
+dotnet test CSharpToRust.sln
+```
+
 ## Sample C# calculator SDK
 
 `samples\Calculator` is a reusable .NET 8 class library that can serve as SDK input
@@ -52,3 +81,23 @@ The package is named `CSharpToRust.Sample.Calculator` and is written to
 ```powershell
 dotnet test samples\Calculator.sln
 ```
+
+## Requirements collector
+
+Start with [the Markdown agent definition](.agents/agents/requirements-collector.agent.md),
+which lists its skills, inputs, outputs, and workflow. It accepts extraction
+evidence and produces a compact `document.json` for downstream agents: public
+APIs, identified behaviors/errors, and concrete cases. A separate
+`document.context.json` retains snapshot association, evidence links, coverage,
+and unresolved decisions without filling the specification with provenance.
+Optional Markdown is rendered from the same JSON.
+
+The .NET 8 helper prepares new drafts, validates the document/context pair,
+enforces readiness with `--require-ready`, and renders the readable view; it
+does not infer behavior. GenTest consumes the feature document, and Code also
+needs the generated tests and manifest. Original source/tests stay available
+through the orchestrator. Historical flat requirements use explicit legacy
+commands rather than being silently treated as feature documents.
+
+See [the collector workflow and schema](docs/requirements-collector.md) for
+local commands, agent selection, artifact safety, and validation rules.
