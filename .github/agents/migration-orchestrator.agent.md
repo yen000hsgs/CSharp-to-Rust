@@ -49,13 +49,17 @@ You are invoked with a run request supplying:
 | `focus` | no | Subset of `feature.id` values to restrict the whole run to. |
 | `resume_from` | no | Stage to resume at, reusing existing artifacts. |
 | `tds_machine` | stage 6 | Explicit TDS machine. Never `auto` or `*`. |
-| `dependency_manifest` | stage 6 | Dependency manifest for the preflight. |
 | `attestation_key_path` | stage 6 | Preflight attestation key. Operator-supplied; not in the repo. |
 | `attestation_key_id` | stage 6 | Key id, e.g. `orchestrator-tds-preflight-v1`. |
 
-The last four are required **only** to run stage 6. Without them stages 1–5 run
+The last three are required **only** to run stage 6. Without them stages 1–5 run
 normally and stage 6 records `blocked` / `missing-verification-inputs`. They are
 never guessed and never discovered by searching the filesystem.
+
+The dependency manifest is **not** a run input. The preflight pins it to
+`targets\route-resolution-client.json` and rejects anything else, just as it pins
+the environment config to `.github\verification-environments\substrate-tds.json`.
+Pass the pinned values; do not parameterise them.
 
 If `csharp_source_root` or `task_id` is missing, stop and report it. Never pick
 a project for the user, and never start a run against a directory you guessed.
@@ -231,38 +235,65 @@ launcher, and **you inherit the host's responsibilities**: build the request,
 validate it, and verify the result's identity. Do not skip these because the
 invocation now succeeds without them.
 
+Stage 6 is currently scoped to one target. The preflight pins the dependency
+manifest to `targets\route-resolution-client.json` and the environment to a
+provisioned Substrate host, so it does not apply to an arbitrary sample crate.
+Record `blocked` rather than reshaping the run to fit the gate.
+
 **1. Generate the source manifest.**
 
+**1. Generate the source manifest.** Run every script in this stage with
+`pwsh` (PowerShell 7+). They use `[System.IO.Path]::GetRelativePath`, which does
+not exist in Windows PowerShell 5.1 — under `powershell.exe` this fails with
+`does not contain a method named 'GetRelativePath'`.
+
 ```powershell
-./scripts/New-VerificationSourceManifest.ps1 -WorkspaceRoot <repo root> `
-                                             -Code artifacts/<run>/rust `
-                                             -OutputPath artifacts/<run>/reports/source-manifest.json
+pwsh -File ./scripts/New-VerificationSourceManifest.ps1 `
+     -WorkspaceRoot <repo root> `
+     -Code artifacts/<run>/rust `
+     -OutputPath artifacts/<run>/reports/source-manifest.json
 ```
 
-It excludes build output, so the SHA-256 is stable across rebuilds. Confirm that
-by running it twice and comparing. If the hash moves, stop — an unstable source
-identity means the verdict cannot be bound to the code it judged.
+**The SHA-256 you need is the script's stdout, not a field in the file** — the
+manifest itself has no `sha256` key. Capture stdout; that value is
+`rust.source_sha256` and the preflight's `-SourceSha256`.
+
+It excludes build output, so the hash is stable across rebuilds. Confirm that by
+running it twice and comparing. If the hash moves, stop — an unstable source
+identity means the verdict cannot be bound to the code it judged. When you
+compare, check the values are non-empty first: two empty strings compare equal
+and will fake a pass.
 
 **2. Run the TDS preflight.** `end_to_end` is required by the request schema and
 itself requires an attested preflight receipt, so there is no valid request
 without this step:
 
 ```powershell
-./scripts/Invoke-SubstrateTdsPreflight.ps1 -RunId <run_id> -WorkspaceRoot <repo root> `
-    -Code artifacts/<run>/rust -ArtifactRoot <artifact root> `
-    -SourceManifest <manifest> -SourceSha256 <hash from step 1> `
+pwsh -File ./scripts/Invoke-SubstrateTdsPreflight.ps1 `
+    -RunId <run_id> -WorkspaceRoot <repo root> `
+    -Code artifacts/<run>/rust -ArtifactRoot <absolute artifact root> `
+    -SourceManifest reports/source-manifest.json `
+    -SourceSha256 <stdout hash from step 1> `
     -TdsMachine <tds_machine> `
     -EnvironmentConfig .github/verification-environments/substrate-tds.json `
-    -DependencyManifest <dependency_manifest> `
+    -DependencyManifest targets/route-resolution-client.json `
     -AttestationKeyPath <attestation_key_path> -AttestationKeyId <attestation_key_id>
 ```
 
-All eleven parameters are mandatory. Four of them — `tds_machine`,
-`dependency_manifest`, `attestation_key_path`, `attestation_key_id` — are run
-inputs only an operator can supply. The environment config ships in the repo;
-the attestation key deliberately does not.
+All eleven parameters are mandatory. **Three different roots are in play, and
+mixing them up is the most common way this stage fails:**
 
-**If any of the four is missing, stage 6 is `blocked` with reason
+| Parameter | Resolved against |
+| --- | --- |
+| `-Code` | `-WorkspaceRoot` |
+| `-SourceManifest` | `-ArtifactRoot` |
+| `-EnvironmentConfig`, `-DependencyManifest` | the verifier repo, and both are pinned |
+
+Only `tds_machine`, `attestation_key_path` and `attestation_key_id` are operator
+inputs. The environment config and dependency manifest ship in the repo; the
+attestation key deliberately does not.
+
+**If any of the three is missing, stage 6 is `blocked` with reason
 `missing-verification-inputs`.** Report exactly which are absent and what you
 would have run. Never invent a machine name, never point at a key you found by
 searching, and never fabricate a receipt to satisfy the schema — a verifier
@@ -270,7 +301,14 @@ result derived from a forged preflight is worse than no result, because it
 carries the authority of a gate that never ran.
 
 Non-zero preflight exit is `blocked`, never `fail`: preflight failing means
-verification could not start, not that the code is wrong.
+verification could not start, not that the code is wrong. Exit 2 is
+`INVALID_INPUT` and names the offending input; fix your invocation and re-run.
+
+The preflight binds the environment, not just the code. It pins the trusted Git
+executable by hash, so a machine with a different Git build fails with `Trusted
+Git executable hash does not match the environment profile` no matter how
+correct the request is. That is `blocked` on environment, and it is the expected
+result anywhere outside a provisioned Substrate host.
 
 **3. Build and validate the request.** Write a JSON object conforming to
 `contracts/verifier-orchestration-request.schema.json`:
@@ -285,6 +323,10 @@ verification could not start, not that the code is wrong.
 
 Validate the object against the schema before invoking. This is the check the
 deterministic host used to perform, and you are standing in for it.
+
+`Test-Json` can name the wrong field: an absolute path in `rust.code` is
+correctly rejected but reported at `/artifact_root`. Trust the rejection, not
+the location, and bisect by field rather than "fixing" whatever it named.
 
 **4. Invoke** `verifier-orchestrator`, passing the request **path** as `Request`
 and no prose alongside it.
