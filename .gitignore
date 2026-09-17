@@ -9,6 +9,7 @@ target/
 
 # Pipeline run artifacts
 artifacts/
+.worktrees/
 
 # Editors / OS
 .vs/

@@ -12,8 +12,8 @@ C# ──► Intermediate ──► Requirements ──┬──► GenTest ─�
                                           Verifiers: syntax/style · feature parity · security · e2e
 ```
 
-An orchestrator agent (autopilot by default) drives the stages and routes on the
-JSON reports each agent emits.
+An orchestrator is intended to drive the stages and route on each agent's
+handoff. The orchestrator implementation is not included in this repository.
 
 ## Agents
 
@@ -22,24 +22,60 @@ in `.github/agents/`.
 
 | Agent | In | Out | Owner |
 | --- | --- | --- | --- |
+| `csharp-extractor` | C# project, solution, or SDK | compiler JSON and source-backed Markdown report | - |
+| `requirements-collector` | extractor report and compiler JSON | document.json, document.context.json, optional rendered Markdown | - |
 | `gentest` | document.json, C# source | unit / functional / e2e tests, test manifest, golden cases | hoangnguyen@ |
 | `feature-parity-verifier` | document.json, C#, tests, Rust | parity report (gaps + behavioral mismatches) | hoangnguyen@ |
 | `code-agent` | document.json, tests | Rust crate, code report | hoangnguyen@ |
 
-Upstream (C# → intermediate, requirements) and the remaining verifiers
-(syntax/style, security, end-to-end) are owned by the rest of the team.
+The remaining verifiers (syntax/style, security, end-to-end) are owned by the
+rest of the team.
 
 **The orchestrator owns control flow.** It supplies each agent's inputs and
-output paths, and decides how each result is used. These three agents do their
+output paths, and decides how each result is used. These agents do their
 job and hand back a structured summary — they never invoke each other and never
 decide what runs next.
 
+## Extraction and requirements agents
+
+The [C# extractor](.agents/agents/csharp-extractor.agent.md) uses a required
+Roslyn helper to collect compiler facts, then writes a source-backed report
+for the orchestrator. Full compiler JSON stays on disk; bounded views keep
+agent input focused. New snapshots omit the unused assembly catalog without
+changing compiler binding or actual source dependency relationships.
+
+The [requirements collector](.agents/agents/requirements-collector.agent.md)
+uses that evidence to author compact behavioral requirements in `document.json`.
+Its `document.context.json` companion retains snapshot association, evidence
+links, coverage, and unresolved decisions. The orchestrator must enforce
+`--require-ready` before dispatching downstream work; structural validation
+alone does not establish semantic parity.
+
+The collector helper prepares authoring drafts, validates the pair, and renders
+optional Markdown; it does not infer behavior. Code also needs GenTest's
+generated suite and manifest. Original source/tests remain available through
+the orchestrator, and historical flat requirements use explicit legacy commands.
+
+Both agents have Copilot discovery entry points under `.github\agents` and
+canonical definitions and skills under `.agents`. See
+[extractor usage](docs/extractor.md) and
+[collector usage](docs/requirements-collector.md) for assignments and helper
+commands.
+
+Build and exercise both helpers and the calculator sample from the repository
+root:
+
+```powershell
+dotnet build CSharpToRust.sln
+dotnet test CSharpToRust.sln
+```
+
 ## Contracts
 
-All agent handoffs are JSON artifacts whose schemas are defined in
-[`docs/contracts.md`](docs/contracts.md). Read it before changing any agent:
-every stage joins on `feature.id`, so that field is load-bearing for the whole
-pipeline.
+Downstream JSON handoff schemas are defined in
+[`docs/contracts.md`](docs/contracts.md). Extraction evidence and the collector's
+context companion are described in their workflow documents linked above.
+Downstream stages join on `feature.id`, so preserve those IDs across handoffs.
 
 ## Proving coverage
 
@@ -216,8 +252,9 @@ dotnet pack  samples\Calculator\Calculator.csproj --configuration Release
 
 ### `tools/testdata/calculator-document.json` — the requirements document
 
-The pipeline's agents do not read C#; they read a **document**. Upstream agents
-produce it from the C# source. This repo ships one describing the sample SDK —
+Downstream agents consume a **document**, with original C# evidence available
+separately. The extractor and collector produce it from the C# source. This repo
+ships a hand-authored fixture describing the sample SDK —
 5 features in 47 traceable requirements (behaviors, errors, invariants and
 worked examples, each with an id the tests must cite) — so the three agents and
 their gates can be exercised without running the whole pipeline.
@@ -240,13 +277,24 @@ side, and that rounding is exactly the divergence this pass exists to catch.
 
 ## Prerequisites
 
-- .NET SDK 10 (verified with 10.0.401) — for the sample and the C# side of the
-  differential parity pass. Everything under `samples/` targets `net8.0`, which
-  an SDK 10 install builds via its roll-forward; a dedicated .NET 8 runtime is
-  not required.
+- .NET 8 SDK, or a newer SDK with the .NET 8 runtime, for the extractor,
+  collector, and calculator sample. These projects target `net8.0`.
+  The extractor automatically uses the latest installed stable .NET runtime
+  so it can load a newer SDK's MSBuild even when runtime 8 is also installed;
+  no roll-forward environment override is needed. The collector, tests, and
+  calculator still require runtime 8. See [extractor runtime selection](docs/extractor.md#runtime-and-sdk-selection).
 - Rust toolchain (`cargo`) — for the Code agent and the Rust side of parity
 
 ## Usage
+
+Select either upstream profile and supply an assignment from its workflow:
+
+```powershell
+copilot --agent csharp-extractor
+copilot --agent requirements-collector
+```
+
+For a downstream profile:
 
 ```
 copilot
