@@ -1,4 +1,18 @@
+# .NET
 **/bin/
 **/obj/
 **/TestResults/
+
+# Rust
+target/
+**/Cargo.lock
+
+# Pipeline run artifacts
+artifacts/
+
+# Editors / OS
 .vs/
+.idea/
+*.user
+Thumbs.db
+.DS_Store
