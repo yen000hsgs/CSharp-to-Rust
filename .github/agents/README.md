@@ -68,5 +68,9 @@ Repeat `--add-dir` for each external root referenced by the request. The orchest
 in parallel, then invokes end-to-end only when both static gates pass. Its response conforms to
 `contracts\verifier-orchestration-result.schema.json`.
 
+This agent can also be invoked as stage 6 of a full migration run by `migration-orchestrator`, which builds and
+validates the request itself. Either launcher inherits the deterministic host's responsibilities, and in both cases the
+aggregate is a candidate model verdict that a deterministic gate must validate before it releases anything.
+
 The end-to-end verifier consumes `.github\skills\substrate-tds-verification\SKILL.md` as procedural context but never
 receives TDS tools. A separate privileged executor may run only after deterministic authenticated preflight succeeds.

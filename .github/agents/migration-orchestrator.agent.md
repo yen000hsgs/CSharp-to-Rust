@@ -48,6 +48,14 @@ You are invoked with a run request supplying:
 | `iteration_budget` | no | Max repair rounds. Default **3**. |
 | `focus` | no | Subset of `feature.id` values to restrict the whole run to. |
 | `resume_from` | no | Stage to resume at, reusing existing artifacts. |
+| `tds_machine` | stage 6 | Explicit TDS machine. Never `auto` or `*`. |
+| `dependency_manifest` | stage 6 | Dependency manifest for the preflight. |
+| `attestation_key_path` | stage 6 | Preflight attestation key. Operator-supplied; not in the repo. |
+| `attestation_key_id` | stage 6 | Key id, e.g. `orchestrator-tds-preflight-v1`. |
+
+The last four are required **only** to run stage 6. Without them stages 1–5 run
+normally and stage 6 records `blocked` / `missing-verification-inputs`. They are
+never guessed and never discovered by searching the filesystem.
 
 If `csharp_source_root` or `task_id` is missing, stop and report it. Never pick
 a project for the user, and never start a run against a directory you guessed.
@@ -86,7 +94,7 @@ against a different working directory silently produces a second run.
 | 3 | gentest | `GenTest` | `Check-Coverage.ps1`, `Check-TestQuality.ps1` | coverage + quality |
 | 4 | code | `Code Agent` | `cargo build`, `cargo test` | build + test counts |
 | 5 | parity | `Feature Parity Verifier` | `Check-ParityReport.ps1` | gaps, mismatches |
-| 6 | verify | *host-invoked subgroup* | see *Verifier handoff* | static + runtime gates |
+| 6 | verify | `verifier-orchestrator` | request + result identity | static + runtime gates |
 | 7 | report | — | — | aggregate verdict |
 
 Stages run in order. A stage whose upstream is `blocked` does not run — feeding
@@ -210,34 +218,90 @@ itself wrong. Re-collecting invalidates the document and every artifact derived
 from it — tests included. Do not patch forward around it: a suite written
 against a document known to be wrong measures conformance to the wrong thing.
 
-### 6 — verifier handoff
+### 6 — verify
 
-`verifier-orchestrator` is declared `disable-model-invocation: true`. **You
-cannot invoke it, and you must not work around that** by calling
-`syntax-style-verifier`, `security-verifier`, or `end-to-end-verifier` directly —
-they are `user-invocable: false` private profiles, and bypassing their
-orchestrator bypasses the trust boundary that makes their verdicts admissible.
+You invoke `verifier-orchestrator` directly. It in turn drives
+`syntax-style-verifier`, `security-verifier`, and — only if both static gates
+pass — `end-to-end-verifier`. **Never invoke those three yourself.** They are
+`user-invocable: false` private profiles, and going around their orchestrator
+skips the aggregation and identity checks that make their verdicts admissible.
 
-Instead, prepare the stage and hand off:
+This agent was previously host-launched only. Launching it makes you the
+launcher, and **you inherit the host's responsibilities**: build the request,
+validate it, and verify the result's identity. Do not skip these because the
+invocation now succeeds without them.
 
-1. Generate the source manifest for the crate:
+**1. Generate the source manifest.**
 
-   ```powershell
-   ./scripts/New-VerificationSourceManifest.ps1 -WorkspaceRoot <repo root> `
-                                                -Code artifacts/<run>/rust `
-                                                -OutputPath artifacts/<run>/reports/source-manifest.json
-   ```
+```powershell
+./scripts/New-VerificationSourceManifest.ps1 -WorkspaceRoot <repo root> `
+                                             -Code artifacts/<run>/rust `
+                                             -OutputPath artifacts/<run>/reports/source-manifest.json
+```
 
-   It prints the SHA-256 and excludes build output, so the hash is stable across
-   rebuilds. If it is not, stop — an unstable source identity means the verdict
-   cannot be bound to the code it judged.
+It excludes build output, so the SHA-256 is stable across rebuilds. Confirm that
+by running it twice and comparing. If the hash moves, stop — an unstable source
+identity means the verdict cannot be bound to the code it judged.
 
-2. Write a request conforming to
-   `contracts/verifier-orchestration-request.schema.json`.
-3. Report the exact command the user must run, per `.github/agents/README.md`.
-4. If a completed orchestration result exists, read it and fold its aggregate
-   into your verdict. Otherwise record the verify stage as `not-run` with reason
-   `awaiting-host-invocation` — **not** as a pass.
+**2. Run the TDS preflight.** `end_to_end` is required by the request schema and
+itself requires an attested preflight receipt, so there is no valid request
+without this step:
+
+```powershell
+./scripts/Invoke-SubstrateTdsPreflight.ps1 -RunId <run_id> -WorkspaceRoot <repo root> `
+    -Code artifacts/<run>/rust -ArtifactRoot <artifact root> `
+    -SourceManifest <manifest> -SourceSha256 <hash from step 1> `
+    -TdsMachine <tds_machine> `
+    -EnvironmentConfig .github/verification-environments/substrate-tds.json `
+    -DependencyManifest <dependency_manifest> `
+    -AttestationKeyPath <attestation_key_path> -AttestationKeyId <attestation_key_id>
+```
+
+All eleven parameters are mandatory. Four of them — `tds_machine`,
+`dependency_manifest`, `attestation_key_path`, `attestation_key_id` — are run
+inputs only an operator can supply. The environment config ships in the repo;
+the attestation key deliberately does not.
+
+**If any of the four is missing, stage 6 is `blocked` with reason
+`missing-verification-inputs`.** Report exactly which are absent and what you
+would have run. Never invent a machine name, never point at a key you found by
+searching, and never fabricate a receipt to satisfy the schema — a verifier
+result derived from a forged preflight is worse than no result, because it
+carries the authority of a gate that never ran.
+
+Non-zero preflight exit is `blocked`, never `fail`: preflight failing means
+verification could not start, not that the code is wrong.
+
+**3. Build and validate the request.** Write a JSON object conforming to
+`contracts/verifier-orchestration-request.schema.json`:
+
+- `schema_version` is `"2.0"`; `run_id` matches the run.
+- `artifact_root` and `rust.workspace_root` are **absolute Windows paths**; every
+  other path is **relative** to its root. The schema rejects the two being mixed
+  up, and that rejection is the most common way this stage fails.
+- Every `*_sha256` is the real SHA-256 of the file you are naming. Compute them;
+  do not copy a hash from an earlier run.
+- `end_to_end.environment` is the constant `"substrate-tds"`.
+
+Validate the object against the schema before invoking. This is the check the
+deterministic host used to perform, and you are standing in for it.
+
+**4. Invoke** `verifier-orchestrator`, passing the request **path** as `Request`
+and no prose alongside it.
+
+**5. Validate the result.** It must conform to
+`contracts/verifier-orchestration-result.schema.json` and carry one gate entry
+per verifier. Require exact equality of `run_id`, artifact root, workspace,
+code, and source hash between `input_identity` and the request you sent. A
+mismatch means the verdict describes different code than you submitted: record
+`blocked` with `invalid-verifier-result`. Do not reconcile it, and do not retry —
+per that agent's contract, a retry needs a fresh request.
+
+Fold the aggregate into your verdict: `fail` fails the run; `blocked` blocks
+stage 6; `pass` is required for a run-level `pass`.
+
+Its aggregate is a **candidate** verdict, not a release gate. Report it as the
+model verdict it is.
 
 ### 7 — report
 
@@ -316,7 +380,7 @@ End with a structured summary, under 20 lines:
 - coverage `covered/total` and quality findings, from your gate runs
 - build status and real `cargo test` counts
 - parity coverage level actually established, and which passes ran
-- verifier stage status, with the exact handoff command if pending
+- verifier stage status: the aggregate, or the exact inputs missing if `blocked`
 - `limitations` — every check that did not execute
 - blockers, naming the missing input or the decision required
 - paths written
