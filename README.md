@@ -1,21 +1,29 @@
 # CSharp-to-Rust
 A tool to convert C# code to Rust
 
+## Migration verifier agents
+
+The user-facing `verifier-orchestrator` agent coordinates four private read-only gates under `.github\agents`: syntax
+and style, feature parity, security, and end-to-end runtime evidence. The upstream migration pipeline supplies the C#
+source, intermediate document, requirements, generated tests, and Rust code as immutable artifacts.
+
+The first target definition is `targets\route-resolution-client.json`. It records how the RouteResolutionClient's C#
+dependencies will be handled when a native Rust equivalent is not yet available.
+
+See `.github\agents\README.md` and `docs\route-resolution-client-pilot.md`.
+
 ## Sample C# calculator SDK
 
-`samples\Calculator` is a reusable .NET 8 class library that can serve as SDK input
-to the converter. Use `samples\Calculator\Calculator.csproj` as the conversion
-target. The library has no console entry point or external package dependencies.
-It supports addition, subtraction, multiplication, and division using C#
-`decimal` values, including negative and fractional numbers.
+`samples\Calculator` is a reusable .NET 8 class library that can serve as SDK input to the converter. Use
+`samples\Calculator\Calculator.csproj` as the conversion target. The library has no console entry point or external
+package dependencies. It supports addition, subtraction, multiplication, and division using C# `decimal` values,
+including negative and fractional numbers.
 
-Install the .NET 8 SDK (or a newer SDK with the .NET 8 runtime). Run the commands
-below from the repository root.
+Install the .NET 8 SDK (or a newer SDK with the .NET 8 runtime). Run the commands below from the repository root.
 
 ### Use the SDK
 
-Reference `samples\Calculator\Calculator.csproj` from a consuming C# project,
-then call its public API:
+Reference `samples\Calculator\Calculator.csproj` from a consuming C# project, then call its public API:
 
 ```csharp
 using CalculatorSample;
@@ -26,10 +34,9 @@ decimal product = Calculator.Multiply(-2m, 3m);    // -6
 decimal quotient = Calculator.Divide(5m, 2m);     // 2.5
 ```
 
-Division by zero throws `DivideByZeroException` with the message
-`Cannot divide by zero.` to the caller. Arithmetic outside the `decimal` range
-throws `OverflowException`. The SDK does not print errors or terminate the
-calling process. Arithmetic follows C# `decimal` precision and range limits.
+Division by zero throws `DivideByZeroException` with the message `Cannot divide by zero.` to the caller. Arithmetic
+outside the `decimal` range throws `OverflowException`. The SDK does not print errors or terminate the calling process.
+Arithmetic follows C# `decimal` precision and range limits.
 
 Build the library or create a local NuGet package:
 
@@ -38,8 +45,8 @@ dotnet build samples\Calculator\Calculator.csproj
 dotnet pack samples\Calculator\Calculator.csproj --configuration Release
 ```
 
-The package is named `CSharpToRust.Sample.Calculator` and is written to
-`samples\Calculator\bin\Release`. Packaging does not publish it to a feed.
+The package is named `CSharpToRust.Sample.Calculator` and is written to `samples\Calculator\bin\Release`. Packaging does
+not publish it to a feed.
 
 ### Project structure
 

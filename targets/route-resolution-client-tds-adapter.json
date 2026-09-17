@@ -1,0 +1,60 @@
+{
+  "name": "RouteResolutionClient Rust TDS deployment",
+  "status": "unavailable",
+  "baseline": {
+    "root": "workspace",
+    "skill": "sources\\dev\\cafe\\src\\.github\\skills\\RouteResolutionTdsTest\\SKILL.md",
+    "responsibilities": [
+      "C# build and deployment",
+      "service control",
+      "Route Resolution test scenarios"
+    ]
+  },
+  "candidate": {
+    "artifact": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "hostOrBridgeBoundary": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "deploymentDestination": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "activation": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "healthCheck": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "rollback": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "evidenceVerification": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "toolchainManifest": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "restoreState": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "executionPlan": {
+      "status": "unavailable",
+      "evidence": null
+    },
+    "controlPlaneTestScript": {
+      "status": "unavailable",
+      "evidence": null
+    }
+  },
+  "readinessRule": "Do not deploy or claim an end-to-end verdict until every candidate field is defined by a reviewed, tracked adapter. Artifact evidence must include path, SHA-256, and validation procedure identity bound to a pinned instruction hash. The toolchain and restore manifests must pin every executable build input, the execution plan must authorize each procedure and command template, the ControlPlane test script must be pinned to a repository commit and content hash, and no restore or getdeps operation may run after final attestation."
+}

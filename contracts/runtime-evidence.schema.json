@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/runtime-evidence.schema.json",
+  "title": "Substrate TDS runtime evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "signed_payload_canonical",
+    "signed_payload",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "signed_payload_canonical": {
+      "type": "string",
+      "minLength": 2
+    },
+    "signed_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "attestation",
+        "source_sha256",
+        "target",
+        "tds_machine",
+        "csharp_artifact",
+        "rust_artifact",
+        "commands",
+        "scenarios",
+        "started_at",
+        "completed_at",
+        "rollback",
+        "overall_status"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attestation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tds_machine": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^*?]+$"
+        },
+        "csharp_artifact": {
+          "$ref": "#/$defs/artifact"
+        },
+        "rust_artifact": {
+          "$ref": "#/$defs/artifact"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/scenario"
+          }
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "rollback": {
+          "$ref": "#/$defs/rollback"
+        },
+        "overall_status": {
+          "enum": [
+            "pass",
+            "fail",
+            "environment-blocked"
+          ]
+        },
+        "environment_failure": {
+          "$ref": "#/$defs/environmentFailure"
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "signer_identity",
+        "key_id",
+        "canonicalization",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "RS256",
+            "ES256",
+            "Ed25519"
+          ]
+        },
+        "signer_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalization": {
+          "const": "sorted-json-integer-v1"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/=_-]{32,}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "sha256",
+        "source_revision"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "procedure_id",
+        "instruction_hash",
+        "command_sha256",
+        "command",
+        "exit_code",
+        "started_at",
+        "completed_at",
+        "stdout_sha256",
+        "stderr_sha256",
+        "stdout",
+        "stderr"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "procedure_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instruction_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "command_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "command": {
+          "$ref": "#/$defs/evidenceBlob"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stdout_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "stderr_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "stdout": {
+          "$ref": "#/$defs/evidenceBlob"
+        },
+        "stderr": {
+          "$ref": "#/$defs/evidenceBlob"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status",
+        "input_sha256",
+        "expected_sha256",
+        "actual_sha256",
+        "input",
+        "expected",
+        "actual"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "actual_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input": {
+          "$ref": "#/$defs/evidenceBlob"
+        },
+        "expected": {
+          "$ref": "#/$defs/evidenceBlob"
+        },
+        "actual": {
+          "$ref": "#/$defs/evidenceBlob"
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "evidence_sha256",
+        "evidence"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "succeeded",
+            "not-required",
+            "failed"
+          ]
+        },
+        "evidence_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceBlob"
+        }
+      }
+    },
+    "evidenceBlob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "environmentFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prerequisite",
+        "details",
+        "retryable"
+      ],
+      "properties": {
+        "prerequisite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "const": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "signed_payload": {
+            "properties": {
+              "overall_status": {
+                "const": "pass"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "signed_payload": {
+            "properties": {
+              "commands": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "exit_code": {
+                      "const": 0
+                    }
+                  }
+                }
+              },
+              "scenarios": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "const": "pass"
+                    }
+                  }
+                }
+              },
+              "rollback": {
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "succeeded",
+                      "not-required"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "signed_payload": {
+            "properties": {
+              "overall_status": {
+                "const": "environment-blocked"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "signed_payload": {
+            "required": [
+              "environment_failure"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

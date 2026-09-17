@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verification-request.schema.json",
+  "title": "Verifier child request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "agent",
+    "workspace_root",
+    "code",
+    "source_manifest",
+    "source_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "agent": {
+      "enum": [
+        "syntax-style-verifier",
+        "feature-parity-verifier",
+        "security-verifier",
+        "end-to-end-verifier"
+      ]
+    },
+    "workspace_root": {
+      "$ref": "#/$defs/path"
+    },
+    "code": {
+      "$ref": "#/$defs/path"
+    },
+    "source_manifest": {
+      "$ref": "#/$defs/path"
+    },
+    "source_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "csharp_workspace_root": {
+      "$ref": "#/$defs/path"
+    },
+    "csharp_code": {
+      "$ref": "#/$defs/path"
+    },
+    "intermediate_document": {
+      "$ref": "#/$defs/path"
+    },
+    "requirements": {
+      "$ref": "#/$defs/path"
+    },
+    "tests_manifest": {
+      "$ref": "#/$defs/path"
+    },
+    "tool_validation_receipt": {
+      "$ref": "#/$defs/path"
+    },
+    "tool_validation_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "environment": {
+      "$ref": "#/$defs/identifier"
+    },
+    "tds_machine": {
+      "$ref": "#/$defs/identifier"
+    },
+    "dependency_manifest": {
+      "$ref": "#/$defs/path"
+    },
+    "preflight_result": {
+      "$ref": "#/$defs/path"
+    },
+    "runtime_evidence": {
+      "$ref": "#/$defs/path"
+    },
+    "runtime_evidence_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "runtime_evidence_validation_receipt": {
+      "$ref": "#/$defs/path"
+    },
+    "runtime_evidence_validation_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\/@()+-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "dependentRequired": {
+    "tool_validation_receipt": [
+      "tool_validation_receipt_sha256"
+    ],
+    "tool_validation_receipt_sha256": [
+      "tool_validation_receipt"
+    ],
+    "runtime_evidence": [
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_sha256": [
+      "runtime_evidence",
+      "runtime_evidence_validation_receipt",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_validation_receipt": [
+      "runtime_evidence",
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_validation_receipt_sha256": [
+      "runtime_evidence",
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "syntax-style-verifier"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "csharp_workspace_root": false,
+          "csharp_code": false,
+          "intermediate_document": false,
+          "requirements": false,
+          "tests_manifest": false,
+          "environment": false,
+          "tds_machine": false,
+          "dependency_manifest": false,
+          "preflight_result": false,
+          "runtime_evidence": false,
+          "runtime_evidence_sha256": false,
+          "runtime_evidence_validation_receipt": false,
+          "runtime_evidence_validation_receipt_sha256": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "enum": [
+              "feature-parity-verifier",
+              "security-verifier"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "csharp_workspace_root",
+          "csharp_code",
+          "intermediate_document",
+          "requirements"
+        ],
+        "properties": {
+          "environment": false,
+          "tds_machine": false,
+          "dependency_manifest": false,
+          "preflight_result": false,
+          "runtime_evidence": false,
+          "runtime_evidence_sha256": false,
+          "runtime_evidence_validation_receipt": false,
+          "runtime_evidence_validation_receipt_sha256": false,
+          "tool_validation_receipt": false,
+          "tool_validation_receipt_sha256": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "feature-parity-verifier"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "tests_manifest"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "requirements",
+          "tests_manifest",
+          "environment",
+          "tds_machine",
+          "dependency_manifest",
+          "preflight_result"
+        ],
+        "properties": {
+          "environment": {
+            "const": "substrate-tds"
+          },
+          "tds_machine": {
+            "not": {
+              "enum": [
+                "auto",
+                "*"
+              ]
+            },
+            "pattern": "^[^*?]+$"
+          },
+          "csharp_workspace_root": false,
+          "csharp_code": false,
+          "intermediate_document": false,
+          "tool_validation_receipt": false,
+          "tool_validation_receipt_sha256": false
+        }
+      }
+    }
+  ]
+}

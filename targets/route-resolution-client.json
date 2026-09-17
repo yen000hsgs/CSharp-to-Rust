@@ -1,0 +1,151 @@
+{
+  "name": "RouteResolutionClient",
+  "owner": "Yen Nguyen <yennguyen@microsoft.com>",
+  "sourceRepository": "Substrate",
+  "sourceProject": "sources\\dev\\cafe\\src\\RoutingPlane\\RouteResolutionClient\\src\\Microsoft.M365.RoutingPlane.RouteResolutionClient.csproj",
+  "sourceTests": "sources\\test\\CAFE\\src\\RoutingPlane\\RouteResolutionClientUnitTests\\src\\Microsoft.M365.RoutingPlane.RouteResolutionClientUnitTests.csproj",
+  "environment": "substrate-tds",
+  "environmentProfile": {
+    "root": "verifier-project",
+    "path": ".github\\verification-environments\\substrate-tds.json"
+  },
+  "componentTestSkill": "sources\\dev\\cafe\\src\\.github\\skills\\RouteResolutionTdsTest\\SKILL.md",
+  "trustedInstructionPaths": [
+    "sources\\dev\\cafe\\src\\.github\\skills\\RouteResolutionTdsTest\\SKILL.md",
+    "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionBuild.instructions.md",
+    "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionCopy.instructions.md",
+    "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionTest.instructions.md"
+  ],
+  "rustDeploymentAdapter": {
+    "root": "verifier-project",
+    "path": "targets\\route-resolution-client-tds-adapter.json"
+  },
+  "dependencies": [
+    {
+      "name": "RouteResolution.proto",
+      "source": "sources\\dev\\cafe\\src\\RoutingPlane\\RouteResolutionCommon\\src\\Protos\\RouteResolution.proto",
+      "strategy": "generated",
+      "rustCandidate": "generated Rust messages and service contracts from the shared proto",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Google.Protobuf and Grpc.*",
+      "strategy": "unavailable",
+      "rustCandidate": "select and validate a Rust gRPC and gRPC-Web client transport, or keep the C# transport behind a bridge",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Grpc.Tools",
+      "strategy": "generated",
+      "rustCandidate": "Rust protobuf and service generation in the build",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": false
+    },
+    {
+      "name": "CredSMARTSdk",
+      "strategy": "bridge",
+      "rustCandidate": "certificate-provider boundary backed by an approved Windows or service bridge",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.M365.Core.DotNetAbstractions",
+      "strategy": "bridge",
+      "rustCandidate": "narrow traits for argument validation, certificate-store access, and lifecycle behavior",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.M365.Core.Environment",
+      "strategy": "bridge",
+      "rustCandidate": "environment abstraction populated by the Substrate host",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.M365.Core.Security",
+      "strategy": "bridge",
+      "rustCandidate": "approved certificate and identity adapter",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.M365.Core.Time",
+      "strategy": "rust-native",
+      "rustCandidate": "injectable Rust clock abstraction",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "System.Memory",
+      "strategy": "rust-native",
+      "rustCandidate": "Rust ownership, slices, and standard collection types",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.M365.VariantConfiguration.ECS",
+      "strategy": "bridge",
+      "rustCandidate": "configuration snapshot adapter preserving update semantics",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.Skype.ECS.Client.Authentication.InternalizedDependencies",
+      "strategy": "bridge",
+      "rustCandidate": "retain ECS authentication in the Substrate host until an approved Rust identity integration is available",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "RoutingPlane.Diagnostics",
+      "strategy": "bridge",
+      "rustCandidate": "telemetry facade preserving required fields and health metrics",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "Microsoft.Exchange.Diagnostics",
+      "strategy": "bridge",
+      "rustCandidate": "replace DisposeTrackable lifecycle behavior with a narrow host boundary or an idiomatic Rust owner",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    },
+    {
+      "name": "RouteResolutionClient.bond",
+      "source": "sources\\dev\\cafe\\src\\RoutingPlane\\RouteResolutionClient\\src\\Bonds\\RouteResolutionClient.bond",
+      "strategy": "generated",
+      "rustCandidate": "generated-compatible contract or explicit schema translation",
+      "ready": false,
+      "evidence": null,
+      "runtimeRequired": true
+    }
+  ],
+  "verification": {
+    "unit": {
+      "allowTestDoubles": true,
+      "compareWithCsharpTests": true
+    },
+    "endToEnd": {
+      "allowTestDoubles": false,
+      "requireCsharpBaseline": true,
+      "requireTds": true,
+      "requireDependencyReadiness": true
+    }
+  }
+}

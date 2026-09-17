@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verifier-orchestration-request.schema.json",
+  "title": "Verifier orchestration request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "csharp",
+    "rust",
+    "artifacts",
+    "syntax",
+    "end_to_end"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "max_retries_per_verifier": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "default": 0
+    },
+    "csharp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_root",
+        "code"
+      ],
+      "properties": {
+        "workspace_root": {
+          "$ref": "#/$defs/path"
+        },
+        "code": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "rust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_root",
+        "code",
+        "source_manifest",
+        "source_sha256"
+      ],
+      "properties": {
+        "workspace_root": {
+          "$ref": "#/$defs/path"
+        },
+        "code": {
+          "$ref": "#/$defs/path"
+        },
+        "source_manifest": {
+          "$ref": "#/$defs/path"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intermediate_document",
+        "requirements",
+        "tests_manifest"
+      ],
+      "properties": {
+        "intermediate_document": {
+          "$ref": "#/$defs/path"
+        },
+        "requirements": {
+          "$ref": "#/$defs/path"
+        },
+        "tests_manifest": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "syntax": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool_validation_receipt": {
+          "$ref": "#/$defs/path"
+        },
+        "tool_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "dependentRequired": {
+        "tool_validation_receipt": [
+          "tool_validation_receipt_sha256"
+        ],
+        "tool_validation_receipt_sha256": [
+          "tool_validation_receipt"
+        ]
+      }
+    },
+    "end_to_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "tds_machine",
+        "dependency_manifest",
+        "preflight_result"
+      ],
+      "properties": {
+        "environment": {
+          "const": "substrate-tds"
+        },
+        "tds_machine": {
+          "$ref": "#/$defs/machine"
+        },
+        "dependency_manifest": {
+          "$ref": "#/$defs/path"
+        },
+        "preflight_result": {
+          "$ref": "#/$defs/path"
+        },
+        "runtime_evidence": {
+          "$ref": "#/$defs/path"
+        },
+        "runtime_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence_validation_receipt": {
+          "$ref": "#/$defs/path"
+        },
+        "runtime_evidence_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "dependentRequired": {
+        "runtime_evidence": [
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\/@()+-]+$"
+    },
+    "machine": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "enum": [
+          "auto",
+          "*"
+        ]
+      },
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

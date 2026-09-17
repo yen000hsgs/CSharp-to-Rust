@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verifier-orchestration-result.schema.json",
+  "title": "Verifier orchestration result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "verdict",
+    "summary",
+    "source_sha256",
+    "gates"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "blocked"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/gate"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "syntax-style-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "feature-parity-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "security-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "end-to-end-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "pass"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "fail"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "fail"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "blocked"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "fail"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "contains": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "blocked",
+                    "not-run"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent",
+        "status",
+        "result_category",
+        "summary",
+        "attempts"
+      ],
+      "properties": {
+        "agent": {
+          "enum": [
+            "syntax-style-verifier",
+            "feature-parity-verifier",
+            "security-verifier",
+            "end-to-end-verifier"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "blocked",
+            "not-run"
+          ]
+        },
+        "result_category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    }
+  }
+}

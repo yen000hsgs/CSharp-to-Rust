@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/syntax-tool-validation.schema.json",
+  "title": "Authenticated syntax tool validation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "validation",
+    "validation_authentication",
+    "validation_payload_canonical",
+    "validation_payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "validation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "validation_authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "key_id",
+        "canonicalization",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256"
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalization": {
+          "const": "sorted-json-integer-v1"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        }
+      }
+    },
+    "validation_payload_canonical": {
+      "type": "string",
+      "minLength": 2
+    },
+    "validation_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "run_id",
+        "source_sha256",
+        "worker_request_sha256",
+        "worker_id",
+        "worker_version",
+        "scope",
+        "manifest_path",
+        "package",
+        "target",
+        "toolchain",
+        "isolation_policy_sha256",
+        "build_inputs_sha256",
+        "checks"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "worker_request_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "worker_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worker_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "enum": [
+            "cargo-package",
+            "cargo-target",
+            "cargo-file",
+            "standalone"
+          ]
+        },
+        "manifest_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolchain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isolation_policy_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "build_inputs_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "cargo-package"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "manifest_path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "package": {
+                "type": "string",
+                "minLength": 1
+              },
+              "checks": {
+                "minItems": 4,
+                "maxItems": 4,
+                "allOf": [
+                  {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "cargo metadata"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "cargo fmt"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "cargo check"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "contains": {
+                      "properties": {
+                        "name": {
+                          "const": "cargo clippy"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "oneOf": [
+              {
+                "properties": {
+                  "scope": {
+                    "enum": [
+                      "cargo-target",
+                      "cargo-file"
+                    ]
+                  },
+                  "manifest_path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "package": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "checks": {
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "allOf": [
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "cargo metadata"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "rustfmt"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "cargo check"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "cargo clippy"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "scope": {
+                    "const": "standalone"
+                  },
+                  "manifest_path": {
+                    "type": "null"
+                  },
+                  "package": {
+                    "type": "null"
+                  },
+                  "checks": {
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "allOf": [
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "rustfmt"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "contains": {
+                          "properties": {
+                            "name": {
+                              "const": "rustc"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status",
+        "details"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "cargo metadata",
+            "cargo fmt",
+            "cargo check",
+            "cargo clippy",
+            "rustfmt",
+            "rustc"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_run"
+          ]
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
