@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verifier-orchestration-result.schema.json",
+  "title": "Verifier orchestration result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "verdict",
+    "summary",
+    "input_identity",
+    "gates"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "blocked"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "input_identity": {
+      "$ref": "#/$defs/inputIdentity"
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/gate"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "syntax-style-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "security-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "agent": {
+                "const": "end-to-end-verifier"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "pass"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "fail"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "fail"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "blocked"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "fail"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            },
+            "contains": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "blocked",
+                    "not-run"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gates": {
+            "contains": {
+              "properties": {
+                "agent": {
+                  "const": "end-to-end-verifier"
+                },
+                "status": {
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "blocked"
+                  ]
+                }
+              },
+              "required": [
+                "agent",
+                "status"
+              ]
+            }
+          }
+        },
+        "required": [
+          "gates"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gates": {
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "agent": {
+                      "const": "syntax-style-verifier"
+                    },
+                    "status": {
+                      "const": "pass"
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "status"
+                  ]
+                }
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "agent": {
+                      "const": "security-verifier"
+                    },
+                    "status": {
+                      "const": "pass"
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "status"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
+    "inputIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_root",
+        "workspace_root",
+        "code",
+        "source_manifest",
+        "source_sha256",
+        "document",
+        "document_sha256",
+        "tests_manifest",
+        "tests_manifest_sha256",
+        "environment",
+        "tds_machine",
+        "dependency_manifest",
+        "dependency_manifest_sha256",
+        "preflight_result",
+        "preflight_result_sha256"
+      ],
+      "properties": {
+        "artifact_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tool_validation_receipt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "document": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tests_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tests_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "const": "substrate-tds"
+        },
+        "tds_machine": {
+          "$ref": "#/$defs/identifier",
+          "not": {
+            "anyOf": [
+              {
+                "const": "*"
+              },
+              {
+                "pattern": "^[aA][uU][tT][oO]$"
+              }
+            ]
+          }
+        },
+        "dependency_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dependency_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "preflight_result": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preflight_result_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence_validation_receipt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_evidence_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "dependentRequired": {
+        "tool_validation_receipt": [
+          "tool_validation_receipt_sha256"
+        ],
+        "tool_validation_receipt_sha256": [
+          "tool_validation_receipt"
+        ],
+        "runtime_evidence": [
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt"
+        ]
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent",
+        "status",
+        "result_category",
+        "summary"
+      ],
+      "properties": {
+        "agent": {
+          "enum": [
+            "syntax-style-verifier",
+            "security-verifier",
+            "end-to-end-verifier"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "blocked",
+            "not-run"
+          ]
+        },
+        "result_category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result_category": {
+                "const": "passed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "fail"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result_category": {
+                "enum": [
+                  "violations-found",
+                  "vulnerabilities-found",
+                  "tests-failed"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "blocked"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "result_category": {
+                "enum": [
+                  "invalid-input",
+                  "verification-blocked",
+                  "dependency-blocked",
+                  "environment-blocked",
+                  "verifier-unavailable",
+                  "invalid-verifier-result"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not-run"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "agent": {
+                "const": "end-to-end-verifier"
+              },
+              "result_category": {
+                "const": "prerequisite-not-passed"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

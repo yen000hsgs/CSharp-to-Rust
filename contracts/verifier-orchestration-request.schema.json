@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verifier-orchestration-request.schema.json",
+  "title": "Verifier orchestration request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "artifact_root",
+    "rust",
+    "syntax",
+    "end_to_end"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "artifact_root": {
+      "$ref": "#/$defs/rootPath"
+    },
+    "rust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_root",
+        "code",
+        "source_manifest",
+        "source_sha256"
+      ],
+      "properties": {
+        "workspace_root": {
+          "$ref": "#/$defs/rootPath"
+        },
+        "code": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "source_manifest": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "syntax": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool_validation_receipt": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "tool_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "dependentRequired": {
+        "tool_validation_receipt": [
+          "tool_validation_receipt_sha256"
+        ],
+        "tool_validation_receipt_sha256": [
+          "tool_validation_receipt"
+        ]
+      }
+    },
+    "end_to_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document",
+        "document_sha256",
+        "tests_manifest",
+        "tests_manifest_sha256",
+        "environment",
+        "tds_machine",
+        "dependency_manifest",
+        "dependency_manifest_sha256",
+        "preflight_result",
+        "preflight_result_sha256"
+      ],
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "document_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tests_manifest": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "tests_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "const": "substrate-tds"
+        },
+        "tds_machine": {
+          "$ref": "#/$defs/machine"
+        },
+        "dependency_manifest": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "dependency_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "preflight_result": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "preflight_result_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "runtime_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence_validation_receipt": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "runtime_evidence_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "dependentRequired": {
+        "runtime_evidence": [
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
+    "rootPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z]:\\\\(?:[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\]*[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\. ](?:\\\\[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\]*[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\. ])*)?\\\\?$",
+      "not": {
+        "pattern": "(^|\\\\)\\.\\.(\\\\|$)"
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:\\.|[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/]*[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/. ](?:[\\\\/][^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/]*[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/. ])*)$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^[A-Za-z]:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^[\\\\/]"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        }
+      ]
+    },
+    "machine": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "const": "*"
+          },
+          {
+            "pattern": "^[aA][uU][tT][oO]$"
+          }
+        ]
+      },
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

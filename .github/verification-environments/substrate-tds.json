@@ -1,0 +1,46 @@
+{
+  "name": "substrate-tds",
+  "type": "remote-test-environment",
+  "workspace": "substrate",
+  "adapterSkill": "substrate-tds-verification",
+  "trustedRepositoryUrl": "https://o365exchange.visualstudio.com/O365%20Core/_git/_optimized/Substrate",
+  "trustedInstructionCommit": "5e0c96fa66d79153ea29a2671597e22b8a8867fc",
+  "trustedGit": {
+    "path": "C:\\Program Files\\Git\\cmd\\git.exe",
+    "sha256": "7b7971dd13f0c3a284e538601f2f9770b3a87dfaccb5fb52d68141c67ed22364",
+    "signatureStatus": "Valid"
+  },
+  "attestationKeyId": "orchestrator-tds-preflight-v1",
+  "executorRequiredTools": [
+    "SubstrateMCP/*"
+  ],
+  "attestedWorkspaceInputs": [
+    "fast_init.cmd",
+    ".corext\\corext.config",
+    ".corext\\gen",
+    "Packages.props",
+    "sources\\dev\\cafe\\src\\RoutingPlane\\RouteResolutionClient\\src\\.pkgrefgen"
+  ],
+  "requires": [
+    "an accessible Substrate checkout",
+    "a component-specific TDS skill or tracked TDS instructions",
+    "an explicitly selected or uniquely available TDS machine",
+    "required VPN, credentials, certificates, services, and test data"
+  ],
+  "policy": {
+    "allowUndocumentedCommands": false,
+    "allowImplicitMachineSelection": false,
+    "allowRestoreAfterAttestation": false,
+    "allowExternalStateChangesWithoutComponentSkill": false,
+    "executionIsolation": "separate-privileged-session",
+    "exposeTdsToolsToVerifier": false,
+    "requireAuthenticatedRuntimeEvidence": true
+  },
+  "verdicts": {
+    "dependencyUnavailable": "dependency-blocked",
+    "deploymentAdapterUnavailable": "dependency-blocked",
+    "environmentUnavailable": "environment-blocked",
+    "testFailure": "tests-failed",
+    "allRequiredChecksPassed": "passed"
+  }
+}

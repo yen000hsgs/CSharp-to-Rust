@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/verification-request.schema.json",
+  "title": "Verifier child request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "agent",
+    "artifact_root",
+    "workspace_root",
+    "code",
+    "source_manifest",
+    "source_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "agent": {
+      "enum": [
+        "syntax-style-verifier",
+        "security-verifier",
+        "end-to-end-verifier"
+      ]
+    },
+    "artifact_root": {
+      "$ref": "#/$defs/rootPath"
+    },
+    "workspace_root": {
+      "$ref": "#/$defs/rootPath"
+    },
+    "code": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "source_manifest": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "source_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "tool_validation_receipt": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "tool_validation_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "document": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "document_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "tests_manifest": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "tests_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "environment": {
+      "$ref": "#/$defs/identifier"
+    },
+    "tds_machine": {
+      "$ref": "#/$defs/identifier"
+    },
+    "dependency_manifest": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "dependency_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "preflight_result": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "preflight_result_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "runtime_evidence": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "runtime_evidence_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "runtime_evidence_validation_receipt": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "runtime_evidence_validation_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
+    "rootPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z]:\\\\(?:[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\]*[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\. ](?:\\\\[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\]*[^<>:\"/|?*\\u0000-\\u001f\\u007f\\\\. ])*)?\\\\?$",
+      "not": {
+        "pattern": "(^|\\\\)\\.\\.(\\\\|$)"
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:\\.|[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/]*[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/. ](?:[\\\\/][^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/]*[^<>:\"|?*\\u0000-\\u001f\\u007f\\\\/. ])*)$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^[A-Za-z]:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^[\\\\/]"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "dependentRequired": {
+    "tool_validation_receipt": [
+      "tool_validation_receipt_sha256"
+    ],
+    "tool_validation_receipt_sha256": [
+      "tool_validation_receipt"
+    ],
+    "runtime_evidence": [
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_sha256": [
+      "runtime_evidence",
+      "runtime_evidence_validation_receipt",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_validation_receipt": [
+      "runtime_evidence",
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt_sha256"
+    ],
+    "runtime_evidence_validation_receipt_sha256": [
+      "runtime_evidence",
+      "runtime_evidence_sha256",
+      "runtime_evidence_validation_receipt"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "syntax-style-verifier"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "document": false,
+          "document_sha256": false,
+          "tests_manifest": false,
+          "tests_manifest_sha256": false,
+          "environment": false,
+          "tds_machine": false,
+          "dependency_manifest": false,
+          "dependency_manifest_sha256": false,
+          "preflight_result": false,
+          "preflight_result_sha256": false,
+          "runtime_evidence": false,
+          "runtime_evidence_sha256": false,
+          "runtime_evidence_validation_receipt": false,
+          "runtime_evidence_validation_receipt_sha256": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "security-verifier"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tool_validation_receipt": false,
+          "tool_validation_receipt_sha256": false,
+          "document": false,
+          "document_sha256": false,
+          "tests_manifest": false,
+          "tests_manifest_sha256": false,
+          "environment": false,
+          "tds_machine": false,
+          "dependency_manifest": false,
+          "dependency_manifest_sha256": false,
+          "preflight_result": false,
+          "preflight_result_sha256": false,
+          "runtime_evidence": false,
+          "runtime_evidence_sha256": false,
+          "runtime_evidence_validation_receipt": false,
+          "runtime_evidence_validation_receipt_sha256": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "document",
+          "document_sha256",
+          "tests_manifest",
+          "tests_manifest_sha256",
+          "environment",
+          "tds_machine",
+          "dependency_manifest",
+          "dependency_manifest_sha256",
+          "preflight_result",
+          "preflight_result_sha256"
+        ],
+        "properties": {
+          "environment": {
+            "const": "substrate-tds"
+          },
+          "tds_machine": {
+            "not": {
+              "anyOf": [
+                {
+                  "const": "*"
+                },
+                {
+                  "pattern": "^[aA][uU][tT][oO]$"
+                }
+              ]
+            },
+            "pattern": "^[^*?]+$"
+          },
+          "tool_validation_receipt": false,
+          "tool_validation_receipt_sha256": false
+        }
+      }
+    }
+  ]
+}

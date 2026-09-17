@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://microsoft.example/csharp-to-rust/tds-preflight-result.schema.json",
+  "title": "Substrate TDS preflight result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verdict",
+    "result_category",
+    "attestation",
+    "attestation_authentication",
+    "attestation_payload_canonical",
+    "attestation_payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "verdict": {
+      "enum": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "result_category": {
+      "enum": [
+        "preflight-passed",
+        "dependency-blocked"
+      ]
+    },
+    "attestation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "attestation_authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "key_id",
+        "canonicalization",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256"
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalization": {
+          "const": "sorted-json-integer-v1"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        }
+      }
+    },
+    "attestation_payload_canonical": {
+      "type": "string",
+      "minLength": 2
+    },
+    "attestation_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "run_id",
+        "workspace",
+        "repository",
+        "environment_config",
+        "git_executable",
+        "workspace_state",
+        "workspace_state_hash",
+        "instruction_commit",
+        "instructions",
+        "target",
+        "code",
+        "source_manifest",
+        "tds_machine",
+        "dependency_manifest",
+        "deployment_adapter",
+        "readiness"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment_config": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "git_executable": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "signature_status"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "signature_status": {
+              "const": "Valid"
+            }
+          }
+        },
+        "workspace_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head",
+            "code_files",
+            "baseline_files",
+            "attested_workspace_inputs"
+          ],
+          "properties": {
+            "head": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "code_files": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "baseline_files": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "attested_workspace_inputs": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "workspace_state_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "instruction_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "instructions": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_manifest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "tds_machine": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^*?]+$"
+        },
+        "dependency_manifest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "deployment_adapter": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "verdict",
+            "result_category",
+            "blocking_dependencies",
+            "deployment_adapter_status",
+            "blocking_deployment_fields"
+          ],
+          "properties": {
+            "verdict": {
+              "enum": [
+                "ready",
+                "blocked"
+              ]
+            },
+            "result_category": {
+              "enum": [
+                "preflight-passed",
+                "dependency-blocked"
+              ]
+            },
+            "blocking_dependencies": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "deployment_adapter_status": {
+              "enum": [
+                "ready",
+                "unavailable"
+              ]
+            },
+            "blocking_deployment_fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "result_category": {
+            "const": "preflight-passed"
+          },
+          "attestation_payload": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "verdict": {
+                    "const": "ready"
+                  },
+                  "result_category": {
+                    "const": "preflight-passed"
+                  },
+                  "blocking_dependencies": {
+                    "maxItems": 0
+                  },
+                  "deployment_adapter_status": {
+                    "const": "ready"
+                  },
+                  "blocking_deployment_fields": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "result_category": {
+            "const": "dependency-blocked"
+          },
+          "attestation_payload": {
+            "properties": {
+              "readiness": {
+                "properties": {
+                  "verdict": {
+                    "const": "blocked"
+                  },
+                  "result_category": {
+                    "const": "dependency-blocked"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
