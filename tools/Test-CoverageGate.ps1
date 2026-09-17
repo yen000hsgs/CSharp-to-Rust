@@ -17,11 +17,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$DocumentPath = (Join-Path $PSScriptRoot 'testdata\calculator-document.json')
+    [string]$DocumentPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Resolved here, not as a param() default: $PSScriptRoot is not yet populated
+# during parameter binding under `powershell -File`, which is how CI invokes this.
+if (-not $DocumentPath) {
+    $DocumentPath = Join-Path $PSScriptRoot 'testdata\calculator-document.json'
+}
 
 $gate = Join-Path $PSScriptRoot 'Check-Coverage.ps1'
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("covgate-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
