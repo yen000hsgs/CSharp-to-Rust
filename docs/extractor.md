@@ -80,7 +80,8 @@ New-Item -ItemType Directory -Force artifacts
 dotnet run --project src\CSharp.Extractor --no-build -- extract --input samples\Calculator\Calculator.csproj --output artifacts\calculator-current.json --task-id calculator-inspection --allow-project-execution
 ```
 
-The SDK and runtime must support .NET 8. Add `--configuration Release` or
+See [runtime and SDK selection](#runtime-and-sdk-selection) below.
+Add `--configuration Release` or
 `--framework net8.0` when needed. Output must be a new JSON file; an existing
 file is never overwritten. Restore of an unfamiliar input requires explicit
 approval. Project evaluation and source generators can execute code; the
@@ -89,6 +90,32 @@ approval flag does not isolate or sandbox it.
 Exit `0` means compiler extraction completed within documented scope; `2`
 means a partial artifact was written; `1` means a request/load/write failure.
 Never treat `partial` as complete or use zero diagnostics to claim no limitations.
+
+### Runtime and SDK selection
+
+The helper still targets `net8.0` and can be built with the .NET 8 SDK.
+Its framework-dependent executable ships with
+[`RollForward=LatestMajor`](https://learn.microsoft.com/en-us/dotnet/core/versions/selection#control-roll-forward-behavior):
+both the apphost executable and `dotnet` launches select the latest installed
+stable .NET runtime, even when runtime 8 is present. With only the .NET 8
+SDK/runtime installed it stays on runtime 8; a newer SDK's accompanying runtime
+lets it load that SDK's MSBuild. This does not retarget the input project.
+
+MSBuild Locator filters out SDKs newer than the running process can load.
+Without this policy, an SDK-10-only installation with runtimes 8 and 10 starts
+the helper on runtime 8 and leaves the locator with no compatible SDK.
+`Major` roll-forward would not fix that case because runtime 8 is present;
+`LatestMajor` deliberately selects the newer runtime instead.
+
+Use a compatible SDK/runtime installation, not just a runtime. Keep runtime 8
+for the collector, test runner, and calculator sample. Restore the trusted input
+project's target-framework assets before extraction when missing. Environment
+`DOTNET_ROLL_FORWARD` and host `--roll-forward` overrides take precedence over
+the shipped policy; remove an older-runtime override if it prevents SDK
+discovery. `dotnet --list-sdks` and `dotnet --list-runtimes` show the installed
+versions. In-process callers of `ProjectExtractor` must likewise use a runtime
+compatible with their selected SDK; the CLI's host policy cannot change an
+already-running embedding process.
 
 ## Compact AI input
 
@@ -206,3 +233,9 @@ the extraction partial. Generated source may not have a physical file.
 ```powershell
 dotnet test CSharpToRust.sln
 ```
+
+The extractor tests build the unchanged trusted calculator project and launch
+the actual CLI through both its apphost and `dotnet` entry points. These smoke
+tests explicitly clear inherited roll-forward overrides and remove their
+isolated output artifacts. A separate regression pins the generated runtime
+configuration, so having an older SDK installed cannot hide a missing policy.

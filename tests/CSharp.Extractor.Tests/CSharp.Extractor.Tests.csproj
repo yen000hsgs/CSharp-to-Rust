@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CSharp.Extractor\CSharp.Extractor.csproj" />
+    <ProjectReference Include="..\..\samples\Calculator\Calculator.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

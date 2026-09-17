@@ -279,6 +279,10 @@ side, and that rounding is exactly the divergence this pass exists to catch.
 
 - .NET 8 SDK, or a newer SDK with the .NET 8 runtime, for the extractor,
   collector, and calculator sample. These projects target `net8.0`.
+  The extractor automatically uses the latest installed stable .NET runtime
+  so it can load a newer SDK's MSBuild even when runtime 8 is also installed;
+  no roll-forward environment override is needed. The collector, tests, and
+  calculator still require runtime 8. See [extractor runtime selection](docs/extractor.md#runtime-and-sdk-selection).
 - Rust toolchain (`cargo`) — for the Code agent and the Rust side of parity
 
 ## Usage
