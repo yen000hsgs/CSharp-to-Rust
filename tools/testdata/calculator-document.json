@@ -1,0 +1,153 @@
+{
+  "source": {
+    "language": "csharp",
+    "kind": "library",
+    "root": "samples/Calculator/",
+    "name": "Calculator",
+    "target_crate": "calculator"
+  },
+  "features": [
+    {
+      "id": "calculator.library",
+      "name": "Calculator",
+      "signature": "public static class Calculator",
+      "summary": "A stateless arithmetic library exposing four exact-decimal operations.",
+      "params": [],
+      "returns": { "type": "n/a", "description": "Static class; it is never instantiated." },
+      "behaviors": [
+        { "id": "calculator.library.b1", "statement": "The assembly is a class library and exposes no entry point." },
+        { "id": "calculator.library.b2", "statement": "All operations are pure: they hold no state and mutate nothing between calls." }
+      ],
+      "errors": [],
+      "invariants": [
+        { "id": "calculator.library.i1", "statement": "Every operation uses exact decimal arithmetic, never binary floating point, so decimal fractions are represented without rounding drift." }
+      ],
+      "examples": [],
+      "visibility": "public",
+      "source_refs": ["samples/Calculator/Calculator.cs#L3-L20"]
+    },
+    {
+      "id": "calculator.add",
+      "name": "Add",
+      "signature": "decimal Add(decimal left, decimal right)",
+      "summary": "Returns the sum of the two operands.",
+      "params": [
+        { "name": "left", "type": "decimal", "constraints": ["any decimal"] },
+        { "name": "right", "type": "decimal", "constraints": ["any decimal"] }
+      ],
+      "returns": { "type": "decimal", "description": "The exact sum of left and right." },
+      "behaviors": [
+        { "id": "calculator.add.b1", "statement": "Returns the arithmetic sum of the two operands." },
+        { "id": "calculator.add.b2", "statement": "Negative operands are supported and follow ordinary signed arithmetic." },
+        { "id": "calculator.add.b3", "statement": "Adding zero returns the other operand unchanged." }
+      ],
+      "errors": [
+        { "id": "calculator.add.e1", "condition": "the sum cannot be represented as a 96-bit coefficient at any scale from the operands' scale down to 0. The addends are first aligned to a common scale, reducing it (with rounding to nearest, ties away from zero) until both fit; an excess that vanishes under that reduction returns decimal.MaxValue rather than throwing, so decimal.MaxValue + 0.1 is MaxValue while decimal.MaxValue + 1 throws", "result": "OverflowException" }
+      ],
+      "invariants": [
+        { "id": "calculator.add.i1", "statement": "Decimal precision is preserved exactly: 0.1 + 0.2 is 0.3, not a binary-float approximation of it." }
+      ],
+      "examples": [
+        { "id": "calculator.add.x1", "input": { "left": "2", "right": "3" }, "expected": "5" },
+        { "id": "calculator.add.x2", "input": { "left": "-2", "right": "3" }, "expected": "1" },
+        { "id": "calculator.add.x3", "input": { "left": "0.1", "right": "0.2" }, "expected": "0.3" },
+        { "id": "calculator.add.x4", "input": { "left": "decimal.MaxValue", "right": "1" }, "expected": { "error": "OverflowException" } }
+      ],
+      "visibility": "public",
+      "source_refs": ["samples/Calculator/Calculator.cs#L5"]
+    },
+    {
+      "id": "calculator.subtract",
+      "name": "Subtract",
+      "signature": "decimal Subtract(decimal left, decimal right)",
+      "summary": "Returns the difference of the two operands, left minus right.",
+      "params": [
+        { "name": "left", "type": "decimal", "constraints": ["any decimal"] },
+        { "name": "right", "type": "decimal", "constraints": ["any decimal"] }
+      ],
+      "returns": { "type": "decimal", "description": "The exact difference left - right." },
+      "behaviors": [
+        { "id": "calculator.subtract.b1", "statement": "Returns left minus right; operand order is significant." },
+        { "id": "calculator.subtract.b2", "statement": "A result smaller than zero is returned as a negative value rather than clamped." },
+        { "id": "calculator.subtract.b3", "statement": "Subtracting two negative operands follows ordinary signed arithmetic." }
+      ],
+      "errors": [
+        { "id": "calculator.subtract.e1", "condition": "the difference cannot be represented as a 96-bit coefficient at any scale from the operands' scale down to 0; as with addition the operands are aligned with rounding to nearest, ties away from zero, so an excess that vanishes under that reduction returns the boundary value rather than throwing", "result": "OverflowException" }
+      ],
+      "invariants": [
+        { "id": "calculator.subtract.i1", "statement": "Fractional operands keep their exact scale: 3.75 - 2.5 is 1.25." }
+      ],
+      "examples": [
+        { "id": "calculator.subtract.x1", "input": { "left": "7", "right": "3" }, "expected": "4" },
+        { "id": "calculator.subtract.x2", "input": { "left": "2", "right": "5" }, "expected": "-3" },
+        { "id": "calculator.subtract.x3", "input": { "left": "3.75", "right": "2.5" }, "expected": "1.25" },
+        { "id": "calculator.subtract.x4", "input": { "left": "decimal.MinValue", "right": "1" }, "expected": { "error": "OverflowException" } }
+      ],
+      "visibility": "public",
+      "source_refs": ["samples/Calculator/Calculator.cs#L7"]
+    },
+    {
+      "id": "calculator.multiply",
+      "name": "Multiply",
+      "signature": "decimal Multiply(decimal left, decimal right)",
+      "summary": "Returns the product of the two operands.",
+      "params": [
+        { "name": "left", "type": "decimal", "constraints": ["any decimal"] },
+        { "name": "right", "type": "decimal", "constraints": ["any decimal"] }
+      ],
+      "returns": { "type": "decimal", "description": "The exact product of left and right." },
+      "behaviors": [
+        { "id": "calculator.multiply.b1", "statement": "Returns the arithmetic product of the two operands." },
+        { "id": "calculator.multiply.b2", "statement": "Multiplying by zero returns zero." },
+        { "id": "calculator.multiply.b3", "statement": "The sign of the result follows the signs of the operands." }
+      ],
+      "errors": [
+        { "id": "calculator.multiply.e1", "condition": "the product cannot be represented even after reducing its scale to 0 -- that is, its integer part needs more than a 96-bit coefficient (decimal.MaxValue * 1.1 throws, while decimal.MaxValue * 1.0 does not). A product too small to represent does not throw: it rounds to 0", "result": "OverflowException" }
+      ],
+      "invariants": [
+        { "id": "calculator.multiply.i1", "statement": "A decimal is a 96-bit unsigned coefficient scaled by a power of ten, with the scale constrained to 0-28; these are two independent limits and either one can force rounding. The product's ideal scale is the sum of the operand scales (1.25 * 2.5 is exactly 3.125, scale 3). When the exact product would need a coefficient wider than 96 bits, the scale is reduced -- rounding the value to nearest, ties away from zero -- until the coefficient fits, even if the reduced scale is far below the sum: decimal.MaxValue * 0.11 has operand scales summing to 2 but returns 8715097876569077135289834537 at scale 0. When the ideal scale exceeds 28 the result is rounded to scale 28 instead, which is why 1e-28 * 1e-28 returns 0 rather than overflowing or preserving scale. Only when no scale down to 0 admits a representable coefficient does the operation throw." }
+      ],
+      "examples": [
+        { "id": "calculator.multiply.x1", "input": { "left": "4", "right": "3" }, "expected": "12" },
+        { "id": "calculator.multiply.x2", "input": { "left": "-4", "right": "3" }, "expected": "-12" },
+        { "id": "calculator.multiply.x3", "input": { "left": "1.25", "right": "2.5" }, "expected": "3.125" },
+        { "id": "calculator.multiply.x4", "input": { "left": "decimal.MaxValue", "right": "2" }, "expected": { "error": "OverflowException" } }
+      ],
+      "visibility": "public",
+      "source_refs": ["samples/Calculator/Calculator.cs#L9"]
+    },
+    {
+      "id": "calculator.divide",
+      "name": "Divide",
+      "signature": "decimal Divide(decimal dividend, decimal divisor)",
+      "summary": "Returns the quotient of dividend divided by divisor, rejecting a zero divisor.",
+      "params": [
+        { "name": "dividend", "type": "decimal", "constraints": ["any decimal"] },
+        { "name": "divisor", "type": "decimal", "constraints": ["must not be zero"] }
+      ],
+      "returns": { "type": "decimal", "description": "The quotient dividend / divisor." },
+      "behaviors": [
+        { "id": "calculator.divide.b1", "statement": "Returns dividend divided by divisor; operand order is significant." },
+        { "id": "calculator.divide.b2", "statement": "The quotient is not truncated to an integer: 5 / 2 is 2.5, not 2." },
+        { "id": "calculator.divide.b3", "statement": "The sign of the quotient follows the signs of the operands." },
+        { "id": "calculator.divide.b4", "statement": "A zero dividend with a non-zero divisor returns zero rather than throwing." }
+      ],
+      "errors": [
+        { "id": "calculator.divide.e1", "condition": "divisor is zero, for any dividend including zero and negatives", "result": "DivideByZeroException with message 'Cannot divide by zero.'" },
+        { "id": "calculator.divide.e2", "condition": "the quotient's integer part needs more than a 96-bit coefficient, so no scale down to 0 can represent it, such as decimal.MaxValue / 0.1", "result": "OverflowException" }
+      ],
+      "invariants": [
+        { "id": "calculator.divide.i1", "statement": "The zero-divisor check precedes the division, so the operation never relies on hardware division-by-zero behaviour." }
+      ],
+      "examples": [
+        { "id": "calculator.divide.x1", "input": { "dividend": "8", "divisor": "2" }, "expected": "4" },
+        { "id": "calculator.divide.x2", "input": { "dividend": "8", "divisor": "-2" }, "expected": "-4" },
+        { "id": "calculator.divide.x3", "input": { "dividend": "5", "divisor": "2" }, "expected": "2.5" },
+        { "id": "calculator.divide.x4", "input": { "dividend": "5", "divisor": "0" }, "expected": { "error": "DivideByZeroException" } },
+        { "id": "calculator.divide.x5", "input": { "dividend": "decimal.MaxValue", "divisor": "0.1" }, "expected": { "error": "OverflowException" } }
+      ],
+      "visibility": "public",
+      "source_refs": ["samples/Calculator/Calculator.cs#L11-L19"]
+    }
+  ]
+}
