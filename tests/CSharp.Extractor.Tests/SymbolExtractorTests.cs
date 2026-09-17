@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using CSharpToRust.Contracts;
 using CSharpToRust.Extraction;
@@ -214,6 +215,70 @@ public class SymbolExtractorTests
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "SOURCE_TRUNCATED");
         Assert.Equal(SymbolExtractor.MaximumDeclarationLength,
             result.Symbols.Single(symbol => symbol.Name == "Run").Declaration.Length);
+    }
+
+    [Theory]
+    [InlineData("raw")]
+    [InlineData("code")]
+    public async Task Extract_TruncatedUnicodeRemainsExactThroughStoredCompactPages(string part)
+    {
+        const string start = "public static string Run() => \"\U0001F600";
+        var prefix = start + new string('x', SymbolExtractor.MaximumDeclarationLength - 1 - start.Length);
+        var project = SymbolExtractor.Extract(Compile(
+            "public static class Api { " + prefix + "\U0001F600tail\"; }"),
+            "sample.csproj", Directory.GetCurrentDirectory());
+        var symbol = Assert.Single(project.Symbols, symbol => symbol.Name == "Run");
+        Assert.DoesNotContain(project.Diagnostics, diagnostic => diagnostic.Severity == "error");
+        Assert.Contains(project.Diagnostics, diagnostic =>
+            diagnostic.Code == "SOURCE_TRUNCATED" && diagnostic.Source == symbol.Source);
+        var artifact = new ExtractionArtifact
+        {
+            TaskId = "unicode-test", ExtractionId = "synthetic-unicode",
+            InputPath = "sample.csproj", RootDirectory = Directory.GetCurrentDirectory(), Projects = [project]
+        };
+        artifact.Status = ExtractionStatus.HasAnalysisGaps(artifact) ? "partial" : "complete";
+        var directory = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "extractor-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "extraction.json");
+        try
+        {
+            await using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                await JsonSerializer.SerializeAsync(stream, artifact, ArtifactJson.Options);
+            var original = await File.ReadAllBytesAsync(path);
+            var combined = new StringBuilder();
+            var offset = 0;
+            while (true)
+            {
+                var json = await CompactViews.ReadAndRenderAsync(new(
+                    "inspect", path, symbol.Id, part, offset, 25, 2001, 4096));
+                Assert.True(Encoding.UTF8.GetByteCount(json + Environment.NewLine) <= 4096);
+                using var page = JsonDocument.Parse(json);
+                Assert.Equal("partial", page.RootElement.GetProperty("status").GetString());
+                Assert.True(page.RootElement.GetProperty("sourceTruncated").GetBoolean());
+                Assert.False(page.RootElement.GetProperty("compacted").GetBoolean());
+                var text = page.RootElement.GetProperty("text").GetString()!;
+                Assert.NotEmpty(text);
+                Assert.False(char.IsLowSurrogate(text[0]));
+                Assert.False(char.IsHighSurrogate(text[^1]));
+                combined.Append(text);
+                var next = page.RootElement.GetProperty("nextOffset");
+                if (next.ValueKind == JsonValueKind.Null)
+                {
+                    Assert.Equal(combined.Length, page.RootElement.GetProperty("totalCharacters").GetInt32());
+                    break;
+                }
+                Assert.InRange(next.GetInt32(), offset + 1, SymbolExtractor.MaximumDeclarationLength);
+                offset = next.GetInt32();
+            }
+
+            Assert.Equal(original, await File.ReadAllBytesAsync(path));
+            Assert.DoesNotContain("\uFFFD", combined.ToString());
+            Assert.Equal(prefix, symbol.Declaration);
+            Assert.Equal(symbol.Declaration, combined.ToString());
+            Assert.False(char.IsHighSurrogate(symbol.Declaration[^1]));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
     }
 
     [Fact]

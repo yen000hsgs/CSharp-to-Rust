@@ -63,6 +63,10 @@ optional rendered `reportPath`; there is no independent Markdown-only spec.
 
 ## Feature document shape
 
+The shared wire shape is defined in
+[Pipeline Contracts](contracts.md#documentjson--the-intermediate-spec);
+this section details the collector's authoring and validation constraints.
+
 Root fields are `source` and `features`. `source` requires `language` (`csharp`),
 `kind` (`library`, `sdk`, `application`, or `solution`) and `root`. Optional
 `name` and `target_crate` accommodate downstream naming.
@@ -203,11 +207,11 @@ to make a document dispatchable.
 
 Strict readers reject unknown/duplicate/missing required properties, invalid
 types, null records and malformed/wrong-shaped JSON instead of treating it as
-an empty successful specification. The new document commands also reject
-compiler snapshots marked complete when their diagnostics indicate analysis
-gaps, using the same rule as the extractor. Ordinary project warnings do not
-automatically indicate missing analysis, and honestly partial evidence remains
-usable without being eligible for downstream dispatch.
+an empty successful specification. All commands, including legacy commands
+and `inspect`, reject compiler snapshots marked complete when their diagnostics
+indicate analysis gaps, using the same rule as the extractor. Ordinary project
+warnings do not automatically indicate missing analysis, and honestly partial
+evidence remains usable without being eligible for downstream dispatch.
 Input size is limited to 64 MiB. `inspect`
 still uses exact IDs, UTF-16 offsets without splitting surrogate pairs, a
 maximum excerpt length of 8192, and a 64 KiB packet bound.
@@ -246,8 +250,12 @@ dotnet run --no-build --project src\Requirements.Collector -- validate-legacy --
 
 Legacy `prepare-legacy --force` retains the original restriction to a valid
 same-snapshot requirements artifact. These commands do not convert legacy
-requirements into feature documents. Historical real reports are evidence of
-their original runs, not output from the new contract; never rewrite them or
+requirements into feature documents. Schema 1.0 wire formats are unchanged,
+but contradictory complete snapshots with known analysis gaps are invalid,
+not a supported legacy exception. Honestly partial snapshots remain usable;
+ordinary project warnings alone do not prevent a complete status.
+Historical real reports are evidence of their original runs, not output from
+the new contract; never rewrite them or
 rebind snapshot IDs in place.
 
 ## Development
@@ -269,3 +277,7 @@ dotnet test tests\Pipeline.Contracts.Tests\Pipeline.Contracts.Tests.csproj --no-
 The existing xUnit infrastructure uses synthetic portable evidence and isolated
 scratch files. Such fixtures are not an extractor or actual agent output.
 No input-project execution is needed to exercise the collector contract.
+The collector CLI compatibility regression reads the unchanged downstream
+`tools/testdata/calculator-document.json` through the actual strict validator,
+pinning its five features and 42 atomic IDs. Its synthetic partial context
+cannot certify the fixture's semantic rules or downstream readiness.

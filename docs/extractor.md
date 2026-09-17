@@ -193,8 +193,11 @@ dispatch, reflection, async timing, and cleanup behavior need source evidence
 and explicit caveats. Compiler facts must not be replaced with AI guesses.
 
 The tool records one evaluated build context; run separately for other target
-frameworks/configurations. Source excerpts are capped at 16,000 characters
-with diagnostics. Missing references, unresolved calls, truncation, implicit
+frameworks/configurations. Source excerpts are capped at 16,000 UTF-16 code
+units without splitting surrogate pairs; a boundary pair can leave 15,999
+units. Truncation retains the exact source prefix and emits `SOURCE_TRUNCATED`.
+Paging to the end of a stored excerpt does not recover omitted source.
+Missing references, unresolved calls, truncation, implicit
 public member/primary constructor gaps, and top-level executable code can make
 the extraction partial. Generated source may not have a physical file.
 

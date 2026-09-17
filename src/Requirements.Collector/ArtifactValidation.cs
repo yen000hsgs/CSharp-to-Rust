@@ -76,6 +76,8 @@ internal static class ArtifactValidation
             }
         }
         Require(artifact.Status != "complete" || !hasErrors, "Complete extraction cannot contain Error diagnostics.");
+        Require(artifact.Status != "complete" || !ExtractionStatus.HasAnalysisGaps(artifact),
+            "Complete extraction contains analysis gaps.");
         return symbols;
     }
 

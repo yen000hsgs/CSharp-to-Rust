@@ -73,6 +73,49 @@ public sealed class DocumentCliTests : IDisposable
         Assert.Equal(before, File.ReadAllBytes(document));
     }
 
+    [Fact]
+    public void DownstreamCalculatorFixturePassesActualStrictStructuralValidationWithoutCertifyingItsSemantics()
+    {
+        var fixturePath = Path.Combine(root, "tools", "testdata", "calculator-document.json");
+        var original = File.ReadAllBytes(fixturePath);
+        var fixture = Read(fixturePath);
+        var extraction = Extraction();
+        extraction.Status = "partial";
+        extraction.RootDirectory = Path.GetFullPath(fixture["source"]!["root"]!.GetValue<string>(),
+            Path.GetDirectoryName(fixturePath)!);
+        Save(input, extraction);
+
+        // Synthetic association exercises the wire contract, not the fixture's behavioral claims.
+        var metadata = Metadata();
+        metadata["documentPath"] = fixturePath;
+        metadata["status"] = "partial";
+        metadata["upstreamStatus"] = "partial";
+        metadata["featureEvidence"] = new JsonArray(fixture["features"]!.AsArray().Select(feature =>
+            (JsonNode)new JsonObject
+            {
+                ["featureId"] = feature!["id"]!.GetValue<string>(), ["confidence"] = "uncertain",
+                ["evidenceIds"] = new JsonArray(SymbolId)
+            }).ToArray());
+        metadata["openQuestions"] = new JsonArray(new JsonObject
+        {
+            ["id"] = "Q-STRUCTURAL-ONLY",
+            ["question"] = "This synthetic compatibility check does not establish behavioral truth.",
+            ["evidenceIds"] = new JsonArray()
+        });
+        Save(context, metadata);
+
+        var result = Run("validate", "--input", input, "--document", fixturePath, "--context", context);
+        Success(result);
+        var summary = ReadSummary(result);
+        Assert.True(summary["structureAndTraceabilityValid"]!.GetValue<bool>());
+        Assert.Equal(5, summary["features"]!.GetValue<int>());
+        Assert.Equal(42, summary["requirements"]!.GetValue<int>());
+        Assert.False(summary["readyForDownstream"]!.GetValue<bool>());
+        Assert.False(summary["semanticParityVerified"]!.GetValue<bool>());
+        Invalid(Run("validate", "--input", input, "--document", fixturePath, "--context", context, "--require-ready"));
+        Assert.Equal(original, File.ReadAllBytes(fixturePath));
+    }
+
     [Theory]
     [InlineData("name", "Odd library")]
     [InlineData("target_crate", "odd_library")]
@@ -389,17 +432,6 @@ public sealed class DocumentCliTests : IDisposable
         Save(input, extraction);
         WriteAuthored();
         Success(Validate(ready: true));
-    }
-
-    [Fact]
-    public void LegacyCommandsRetainHistoricalAnalysisGapHandling()
-    {
-        var extraction = Extraction();
-        extraction.Projects[0].Diagnostics.Add(new("SOURCE_TRUNCATED", "warning", "Stored declaration is incomplete."));
-        Save(input, extraction);
-        var legacy = Path.Combine(directory, "legacy.json");
-        Success(Run("prepare-legacy", "--input", input, "--output", legacy));
-        Success(Run("validate-legacy", "--input", input, "--requirements", legacy));
     }
 
     [Theory]

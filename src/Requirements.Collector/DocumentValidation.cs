@@ -15,8 +15,6 @@ internal static class DocumentValidation
     public static bool Validate(FeatureDocument document, DocumentContext context, ExtractionArtifact extraction,
         IReadOnlyDictionary<string, SymbolFact> symbols, string inputPath, string documentPath, string contextPath)
     {
-        Require(extraction.Status != "complete" || !ExtractionStatus.HasAnalysisGaps(extraction),
-            "Complete extraction contains analysis gaps.");
         Require(document.Source is not null, "source must be a non-null object.");
         Choice(document.Source.Language, "source.language", "csharp");
         Choice(document.Source.Kind, "source.kind", "library", "sdk", "application", "solution");

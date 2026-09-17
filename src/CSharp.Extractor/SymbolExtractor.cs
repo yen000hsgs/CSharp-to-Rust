@@ -130,7 +130,9 @@ public static class SymbolExtractor
         var combined = string.IsNullOrEmpty(fact.Declaration) ? text : fact.Declaration + Environment.NewLine + text;
         if (combined.Length > MaximumDeclarationLength)
         {
-            combined = combined[..MaximumDeclarationLength];
+            var length = MaximumDeclarationLength;
+            if (char.IsHighSurrogate(combined[length - 1])) length--;
+            combined = combined[..length];
             project.Diagnostics.Add(new("SOURCE_TRUNCATED", "warning",
                 $"Declaration excerpt for {fact.Id} exceeds {MaximumDeclarationLength} characters; read original source.",
                 SymbolIdentity.Source(node.GetLocation(), root)));

@@ -62,6 +62,92 @@ public sealed class CollectorCliTests : IDisposable
         Assert.Contains("snapshot-1", result.Stdout);
     }
 
+    [Theory]
+    [InlineData("UNRESOLVED_CALL", false)]
+    [InlineData("SOURCE_TRUNCATED", false)]
+    [InlineData("FRAMEWORK_UNKNOWN", false)]
+    [InlineData("SYNTHESIZED_MEMBERS", false)]
+    [InlineData("PRIMARY_CONSTRUCTOR", false)]
+    [InlineData("TOP_LEVEL_CODE", false)]
+    [InlineData("WORKSPACE", true)]
+    [InlineData("UNSUPPORTED_PROJECT", true)]
+    public void LegacyCommandsAndInspectRejectCompleteExtractionWithAnalysisGaps(string code, bool topLevel)
+    {
+        var extraction = Extraction();
+        (topLevel ? extraction.Diagnostics : extraction.Projects[0].Diagnostics)
+            .Add(new(code, "warning", "Compiler analysis is incomplete."));
+        Save(input, extraction);
+        Save(output, Requirements());
+        var originalInput = File.ReadAllBytes(input);
+        var originalRequirements = File.ReadAllBytes(output);
+        var draft = Path.Combine(directory, "draft.json");
+        var results = new[]
+        {
+            Run("validate-legacy", "--input", input, "--requirements", output),
+            Run("prepare-legacy", "--input", input, "--output", draft),
+            Run("inspect", "--input", input, "--symbol", "p:M:Demo.Read")
+        };
+
+        Assert.All(results, result =>
+        {
+            AssertInvalid(result);
+            Assert.Contains("analysis gaps", result.Stderr, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(result.Stdout);
+        });
+        Assert.False(File.Exists(draft));
+        Assert.Equal(originalInput, File.ReadAllBytes(input));
+        Assert.Equal(originalRequirements, File.ReadAllBytes(output));
+    }
+
+    [Theory]
+    [InlineData("SOURCE_TRUNCATED", false)]
+    [InlineData("WORKSPACE", true)]
+    public void LegacyCommandsAndInspectRetainHonestPartialAnalysisGaps(string code, bool topLevel)
+    {
+        var extraction = Extraction();
+        extraction.Status = "partial";
+        (topLevel ? extraction.Diagnostics : extraction.Projects[0].Diagnostics)
+            .Add(new(code, "warning", "Compiler analysis is incomplete."));
+        Save(input, extraction);
+        var original = File.ReadAllBytes(input);
+        AssertSuccess(Run("prepare-legacy", "--input", input, "--output", output));
+        var draft = JsonSerializer.Deserialize<RequirementsArtifact>(File.ReadAllText(output), ArtifactJson.Options)!;
+        Assert.Equal("1.0", draft.SchemaVersion);
+        Assert.Contains(draft.OpenQuestions, question => question.Id == "Q-EXTRACTION");
+
+        var requirements = Requirements();
+        requirements.Status = "partial";
+        Save(output, requirements);
+        var result = Run("validate-legacy", "--input", input, "--requirements", output);
+        AssertSuccess(result);
+        using var summary = JsonDocument.Parse(result.Stdout);
+        Assert.Equal("partial", summary.RootElement.GetProperty("extractionStatus").GetString());
+        Assert.False(summary.RootElement.GetProperty("complete").GetBoolean());
+        Assert.False(summary.RootElement.GetProperty("semanticParityVerified").GetBoolean());
+        var inspected = Run("inspect", "--input", input, "--symbol", "p:M:Demo.Read");
+        AssertSuccess(inspected);
+        using var evidence = JsonDocument.Parse(inspected.Stdout);
+        Assert.Equal("partial", evidence.RootElement.GetProperty("status").GetString());
+        Assert.Equal(extraction.Projects[0].Symbols[0].Declaration, evidence.RootElement.GetProperty("declaration").GetString());
+        Assert.Equal(original, File.ReadAllBytes(input));
+    }
+
+    [Fact]
+    public void LegacyCommandsRetainCompleteStatusForOrdinaryProjectWarnings()
+    {
+        var extraction = Extraction();
+        extraction.Projects[0].Diagnostics.Add(new("CS0169", "warning", "The field is never used."));
+        Save(input, extraction);
+        AssertSuccess(Run("prepare-legacy", "--input", input, "--output", output));
+        Save(output, Requirements());
+        var result = Run("validate-legacy", "--input", input, "--requirements", output);
+        AssertSuccess(result);
+        using var summary = JsonDocument.Parse(result.Stdout);
+        Assert.True(summary.RootElement.GetProperty("complete").GetBoolean());
+        Assert.False(summary.RootElement.GetProperty("semanticParityVerified").GetBoolean());
+        AssertSuccess(Run("inspect", "--input", input, "--symbol", "p:M:Demo.Read"));
+    }
+
     [Fact]
     public void CalculatorFixturesDoNotRequireMachineSpecificSnapshotFiles()
     {
