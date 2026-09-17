@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -31,19 +32,53 @@ internal static class StrictJson
     public static T Read<T>(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (stream.Length > MaximumInputBytes)
-            throw new InvalidDataException($"Artifact exceeds the {MaximumInputBytes} byte input limit.");
+        ValidateSize(stream.Length);
         using var document = JsonDocument.Parse(stream);
-        ValidateTokens(document.RootElement, "$");
+        return Deserialize<T>(document.RootElement);
+    }
+
+    public static T Read<T>(ReadOnlyMemory<byte> bytes)
+    {
+        ValidateSize(bytes.Length);
+        // Stream parsing accepts a UTF-8 BOM; exclude it only from parsing, never from the snapshot hash.
+        if (bytes.Span.StartsWith(new byte[] { 0xef, 0xbb, 0xbf }))
+            bytes = bytes[3..];
+        using var document = JsonDocument.Parse(bytes);
+        return Deserialize<T>(document.RootElement);
+    }
+
+    public static (T Value, string Sha256) ReadSnapshot<T>(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var length = stream.Length;
+        ValidateSize(length);
+        // This private buffer is never exposed or modified: parsing and hashing cannot observe different path versions.
+        var bytes = new byte[(int)length];
+        stream.ReadExactly(bytes);
+        ArtifactValidation.Require(stream.ReadByte() == -1, "Artifact grew while loading; retry with stable input files.");
+        var value = Read<T>((ReadOnlyMemory<byte>)bytes);
+        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return (value, digest);
+    }
+
+    private static void ValidateSize(long length)
+    {
+        if (length > MaximumInputBytes)
+            throw new InvalidDataException($"Artifact exceeds the {MaximumInputBytes} byte input limit.");
+    }
+
+    private static T Deserialize<T>(JsonElement root)
+    {
+        ValidateTokens(root, "$");
         if (typeof(T) == typeof(FeatureDocument)
-            && document.RootElement.ValueKind == JsonValueKind.Object
-            && document.RootElement.TryGetProperty("source", out var source)
+            && root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("source", out var source)
             && source.ValueKind == JsonValueKind.Object)
             foreach (var name in new[] { "name", "target_crate" })
                 if (source.TryGetProperty(name, out var value))
                     ArtifactValidation.Require(value.ValueKind == JsonValueKind.String
                         && !string.IsNullOrWhiteSpace(value.GetString()), $"source.{name} must be a nonempty string when supplied.");
-        return document.RootElement.Deserialize<T>(Options)
+        return root.Deserialize<T>(Options)
             ?? throw new InvalidDataException("Artifact root must be a non-null object.");
     }
 

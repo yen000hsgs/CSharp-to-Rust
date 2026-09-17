@@ -5,11 +5,14 @@ A multi-agent tool to migrate C# code to Rust.
 ## Pipeline
 
 ```
-C# ──► Intermediate ──► Requirements ──┬──► GenTest ──► Tests ──┐
-                       (document.json) │                        ├──► Code ──► Rust
-                                       └────────────────────────┘      │
-                                                                       ▼
-                                          Verifiers: syntax/style · feature parity · security · e2e
+C# -> Extractor -> Collector -> Distributor
+                     |             |
+               document.json  distribution.json
+                     +------ Orchestrator ------+
+                                |               |
+                             GenTest --tests--> Code -> Rust
+                                                        |
+                             Verifiers: syntax/style, feature parity, security, e2e
 ```
 
 An orchestrator is intended to drive the stages and route on each agent's
@@ -24,6 +27,7 @@ in `.github/agents/`.
 | --- | --- | --- | --- |
 | `csharp-extractor` | C# project, solution, or SDK | compiler JSON and source-backed Markdown report | - |
 | `requirements-collector` | extractor report and compiler JSON | document.json, document.context.json, optional rendered Markdown | - |
+| `code-distributor` | requirements document, context, compiler JSON | distribution.json with feature work packages and dependencies | - |
 | `gentest` | document.json, C# source | unit / functional / e2e tests, test manifest, golden cases | hoangnguyen@ |
 | `feature-parity-verifier` | document.json, C#, tests, Rust | parity report (gaps + behavioral mismatches) | hoangnguyen@ |
 | `code-agent` | document.json, tests | Rust crate, code report | hoangnguyen@ |
@@ -36,7 +40,7 @@ output paths, and decides how each result is used. These agents do their
 job and hand back a structured summary — they never invoke each other and never
 decide what runs next.
 
-## Extraction and requirements agents
+## Extraction, requirements, and distribution agents
 
 The [C# extractor](.agents/agents/csharp-extractor.agent.md) uses a required
 Roslyn helper to collect compiler facts, then writes a source-backed report
@@ -61,6 +65,13 @@ canonical definitions and skills under `.agents`. See
 [extractor usage](docs/extractor.md) and
 [collector usage](docs/requirements-collector.md) for assignments and helper
 commands.
+
+The [code distributor](.agents/agents/code-distributor.agent.md) groups the
+collected requirements into feature work packages without rewriting their
+IDs or behavior. Its `distribution.json` records prerequisites, shared concerns,
+and unassigned work. The orchestrator passes a package's existing feature IDs
+through GenTest/Code's `focus` input; it still owns scheduling and shared-file
+coordination. See [distributor usage](docs/code-distributor.md).
 
 Build and exercise both helpers and the calculator sample from the repository
 root:
@@ -292,6 +303,7 @@ Select either upstream profile and supply an assignment from its workflow:
 ```powershell
 copilot --agent csharp-extractor
 copilot --agent requirements-collector
+copilot --agent code-distributor
 ```
 
 For a downstream profile:

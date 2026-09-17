@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pipeline.Contracts\Pipeline.Contracts.csproj" />
+    <InternalsVisibleTo Include="Requirements.Collector.Tests" />
   </ItemGroup>
 </Project>

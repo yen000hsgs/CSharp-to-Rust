@@ -243,6 +243,13 @@ maximum excerpt length of 8192, and a 64 KiB packet bound.
 
 ## Downstream handoff
 
+When feature distribution is requested, the orchestrator forwards this
+document/context pair and its compiler artifact to the
+[code distributor](code-distributor.md). It returns implementation work
+packages selecting existing feature IDs, plus dependencies and shared concerns,
+without rewriting the requirements. The distributor's helper validates the same
+upstream contract; it cannot promote a partial collection to ready.
+
 Before dispatch, the orchestrator runs validation with `--require-ready` and
 retains the document/context pair with original evidence. GenTest consumes
 the document to create tests, manifest and differential cases. Code consumes
