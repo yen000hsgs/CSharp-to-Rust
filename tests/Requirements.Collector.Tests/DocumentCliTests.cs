@@ -622,6 +622,78 @@ public sealed class DocumentCliTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TransportingTheSameSnapshotHonorsTheStoredDocumentBinding(bool relativeDocumentPath)
+    {
+        Success(Run("prepare", "--input", input, "--output", document, "--context", context));
+        if (relativeDocumentPath)
+        {
+            var metadata = Read(context);
+            metadata["documentPath"] = "document.json";
+            metadata["evidenceReferences"] = new JsonArray("extraction.json");
+            Save(context, metadata);
+        }
+        Success(Validate());
+        var destination = Path.Combine(directory, "transported");
+        Directory.CreateDirectory(destination);
+        var originals = new[] { input, document, context }.ToDictionary(path => path, File.ReadAllBytes);
+        foreach (var path in originals.Keys)
+            File.Copy(path, Path.Combine(destination, Path.GetFileName(path)));
+
+        var result = Run("validate", "--input", Path.Combine(destination, "extraction.json"),
+            "--document", Path.Combine(destination, "document.json"),
+            "--context", Path.Combine(destination, "document.context.json"));
+        if (relativeDocumentPath)
+        {
+            Success(result);
+            Assert.False(ReadSummary(result)["readyForDownstream"]!.GetValue<bool>());
+            Assert.False(ReadSummary(result)["semanticParityVerified"]!.GetValue<bool>());
+        }
+        else
+        {
+            Invalid(result);
+            Assert.Contains("Context documentPath does not match", result.Stderr);
+        }
+        foreach (var (path, bytes) in originals)
+        {
+            Assert.Equal(bytes, File.ReadAllBytes(path));
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(destination, Path.GetFileName(path))));
+        }
+    }
+
+    [Fact]
+    public void AnotherSnapshotCannotBeSubstitutedByChangingOnlySourceNavigation()
+    {
+        Success(Run("prepare", "--input", input, "--output", document, "--context", context));
+        var originals = new[] { input, document, context }.ToDictionary(path => path, File.ReadAllBytes);
+        var other = Extraction();
+        other.RootDirectory = Path.Combine(directory, "other-checkout");
+        other.ExtractionId = "independent-synthetic-snapshot";
+        var otherInput = Path.Combine(directory, "other-extraction.json");
+        Save(otherInput, other);
+
+        var result = Run("validate", "--input", otherInput, "--document", document, "--context", context);
+        Invalid(result);
+        Assert.Contains("source.root does not match", result.Stderr);
+
+        var otherDocument = Path.Combine(directory, "other-document.json");
+        var otherContext = Path.Combine(directory, "other-document.context.json");
+        var navigation = Read(document);
+        navigation["source"]!["root"] = other.RootDirectory;
+        Save(otherDocument, navigation);
+        var association = Read(context);
+        association["documentPath"] = otherDocument;
+        Save(otherContext, association);
+        var changedNavigation = Run("validate", "--input", otherInput, "--document", otherDocument,
+            "--context", otherContext);
+        Invalid(changedNavigation);
+        Assert.Contains("Context extractionId does not match extraction", changedNavigation.Stderr);
+        foreach (var (path, bytes) in originals)
+            Assert.Equal(bytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
     [InlineData("ConsoleApplication", "Odd.csproj", "application")]
     [InlineData("WindowsApplication", "Odd.csproj", "application")]
     [InlineData("DynamicallyLinkedLibrary", "Odd.sln", "solution")]

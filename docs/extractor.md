@@ -212,6 +212,26 @@ paths and IDs and are not evidence that the current source or build context has
 been inspected. Artifacts are ignored by Git because they may contain source
 evidence and machine-local paths.
 
+### Snapshot identity is context-bound
+
+`extractionId` identifies the observed extraction payload, not portable source
+content. The helper hashes its serialized payload before assigning the ID;
+that payload includes `taskId`, the absolute `rootDirectory`, build settings,
+compiler facts, diagnostics, and limitations. Identical source extracted in
+two checkout roots can therefore produce different IDs. Repeating an unchanged
+payload is deterministic, but equal source text alone does not promise equal
+snapshot IDs.
+
+Copying an existing compiler JSON file does not regenerate its snapshot or
+change its ID. Its source paths still describe the original observed context.
+Generating a new extraction in another checkout is different: requirements
+must not silently substitute it for the snapshot their companion names.
+Do not normalize historical paths, recompute IDs, or rebind companions in place.
+Portable source-content identity would be a separate contract, not a change to
+this schema 1.0 association key. See
+[transport and relocation](requirements-collector.md#transport-relocation-and-new-extractions)
+for the current document-path constraints.
+
 ## Analysis limits
 
 This is source-declaration extraction, not a complete runtime behavior model.
@@ -239,3 +259,11 @@ the actual CLI through both its apphost and `dotnet` entry points. These smoke
 tests explicitly clear inherited roll-forward overrides and remove their
 isolated output artifacts. A separate regression pins the generated runtime
 configuration, so having an older SDK installed cannot hide a missing policy.
+
+[The .NET workflow](../.github/workflows/dotnet.yml) runs the solution in Release
+on a GitHub-hosted Windows runner for pull requests and pushes to `main`. It
+ensures SDKs/runtimes 8 and 10 are available and logs the installed inventory;
+it does not pin global SDK selection or claim a single-SDK test matrix.
+Tests generate fresh local evidence rather than substituting CI extractions
+into another machine's historical document/context pair. A different CI
+checkout path alone is not expected to make these tests fail.

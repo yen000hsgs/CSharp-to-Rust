@@ -1,0 +1,30 @@
+name: .NET tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+          dotnet-quality: ga
+      - name: Show SDK and runtime inventory
+        run: |
+          dotnet --list-sdks
+          dotnet --list-runtimes
+      - name: Run solution tests
+        run: dotnet test CSharpToRust.sln --configuration Release --nologo --verbosity minimal

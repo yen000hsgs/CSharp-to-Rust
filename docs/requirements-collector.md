@@ -168,6 +168,31 @@ context directory. Feature `source_refs` resolve against the extraction source
 root, with an optional `#Lstart-Lend` location. Preparation writes absolute
 source-root, document and extraction-reference paths to avoid worktree ambiguity.
 
+### Transport, relocation, and new extractions
+
+The compiler's [snapshot ID is context-bound](extractor.md#snapshot-identity-is-context-bound),
+not a portable source-content hash. These operations have different contracts:
+
+| Operation | Current behavior |
+| --- | --- |
+| Copy the same snapshot and paired authoring files | No re-extraction or ID change is needed. A companion authored with relative `documentPath` can travel with its document. `source.root` must still resolve to the source root recorded in that same snapshot. |
+| Move files produced by `prepare` unchanged | Preparation uses absolute paths. Moving the document normally invalidates the stored `documentPath`; the helper does not automatically relocate the package or source evidence. |
+| Re-extract in another checkout | This is a new observed context and can have a different ID despite identical source. An old companion cannot validate against it. Changing only the document's source navigation still leaves the ID mismatch. |
+
+Relative navigation is not an automatic source-root remapping facility. A
+relative compiler `rootDirectory`, when present, resolves against the compiler
+JSON's directory; the actual extractor emits an absolute source root. A copied
+real snapshot therefore retains its original source location. Transporting
+files does not make missing source available, prove freshness, or establish
+semantic parity: validation checks path association and structure, not whether
+the referenced source has been inspected at the destination.
+
+Preserve original compiler artifacts, IDs, and paired outputs. If a new checkout
+needs a fresh extraction, create a new document/context pair and review its
+evidence association and readiness rather than copying old approvals or changing
+the old snapshot ID to bypass validation. A portable content key or explicit
+relocation manifest needs a separate design; neither is implemented here.
+
 ## Helper commands
 
 Use .NET 8 or a newer SDK supporting the .NET 8 runtime. Build the helper from
