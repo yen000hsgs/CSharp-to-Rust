@@ -24,7 +24,6 @@
     "agent": {
       "enum": [
         "syntax-style-verifier",
-        "feature-parity-verifier",
         "security-verifier",
         "end-to-end-verifier"
       ]
@@ -42,7 +41,8 @@
     },
     "summary": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 500
     },
     "input": {
       "$ref": "#/$defs/input"
@@ -68,9 +68,6 @@
         "critical",
         "unknown"
       ]
-    },
-    "parity": {
-      "$ref": "#/$defs/parity"
     },
     "environment": {
       "$ref": "#/$defs/environment"
@@ -101,15 +98,25 @@
     }
   },
   "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "input": {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "artifact_root",
         "workspace_root",
         "code",
-        "code_hash"
+        "source_manifest",
+        "source_sha256"
       ],
       "properties": {
+        "artifact_root": {
+          "type": "string",
+          "minLength": 1
+        },
         "workspace_root": {
           "type": "string",
           "minLength": 1
@@ -118,46 +125,94 @@
           "type": "string",
           "minLength": 1
         },
-        "code_hash": {
+        "source_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
           "$ref": "#/$defs/sha256"
         },
-        "csharp_workspace_root": {
+        "tool_validation_receipt": {
           "type": "string",
           "minLength": 1
         },
-        "csharp_code": {
+        "tool_validation_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "document": {
           "type": "string",
           "minLength": 1
         },
-        "intermediate_document": {
-          "type": "string",
-          "minLength": 1
-        },
-        "requirements": {
-          "type": "string",
-          "minLength": 1
+        "document_sha256": {
+          "$ref": "#/$defs/sha256"
         },
         "tests_manifest": {
           "type": "string",
           "minLength": 1
         },
-        "tool_validation_receipt_hash": {
+        "tests_manifest_sha256": {
           "$ref": "#/$defs/sha256"
         },
-        "workspace_state_hash": {
+        "dependency_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dependency_manifest_sha256": {
           "$ref": "#/$defs/sha256"
         },
-        "runtime_evidence_hash": {
+        "preflight_result": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preflight_result_sha256": {
           "$ref": "#/$defs/sha256"
         },
-        "validation_receipt_hash": {
+        "workspace_state_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_evidence_validation_receipt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_evidence_validation_receipt_sha256": {
           "$ref": "#/$defs/sha256"
         }
+      },
+      "dependentRequired": {
+        "tool_validation_receipt": [
+          "tool_validation_receipt_sha256"
+        ],
+        "tool_validation_receipt_sha256": [
+          "tool_validation_receipt"
+        ],
+        "runtime_evidence": [
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_validation_receipt",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt_sha256"
+        ],
+        "runtime_evidence_validation_receipt_sha256": [
+          "runtime_evidence",
+          "runtime_evidence_sha256",
+          "runtime_evidence_validation_receipt"
+        ]
       }
-    },
-    "sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
     },
     "check": {
       "type": "object",
@@ -170,7 +225,8 @@
       "properties": {
         "name": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 100
         },
         "status": {
           "enum": [
@@ -181,7 +237,8 @@
         },
         "details": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 1000
         }
       }
     },
@@ -198,7 +255,6 @@
           "enum": [
             "syntax",
             "style",
-            "parity",
             "security"
           ]
         },
@@ -214,85 +270,41 @@
         },
         "message": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         },
         "file": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 500
         },
         "lines": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 50
         },
         "rule": {
           "type": "string",
-          "minLength": 1
-        },
-        "requirement_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source_behavior": {
-          "type": "string",
-          "minLength": 1
-        },
-        "rust_evidence": {
-          "type": "string",
-          "minLength": 1
-        },
-        "test_evidence": {
-          "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 200
         },
         "attack_path": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         },
         "impact": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 1000
         },
         "remediation": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 1000
         },
         "confidence": {
-          "enum": [
-            "high"
-          ]
-        }
-      }
-    },
-    "parity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "requirements_total",
-        "requirements_implemented",
-        "requirements_tested",
-        "source_behaviors_total",
-        "source_behaviors_traced"
-      ],
-      "properties": {
-        "requirements_total": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "requirements_implemented": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "requirements_tested": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "source_behaviors_total": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "source_behaviors_traced": {
-          "type": "integer",
-          "minimum": 0
+          "const": "high"
         }
       }
     },
@@ -354,7 +366,8 @@
         },
         "evidence": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 1000
         }
       }
     },
@@ -370,7 +383,8 @@
       "properties": {
         "command": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         },
         "exit_code": {
           "type": "integer"
@@ -384,7 +398,8 @@
         },
         "evidence": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         }
       }
     },
@@ -422,19 +437,23 @@
       "properties": {
         "test": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 500
         },
         "requirement_id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 200
         },
         "expected": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         },
         "actual": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2000
         }
       }
     },
@@ -479,242 +498,6 @@
     {
       "if": {
         "properties": {
-          "agent": {
-            "const": "syntax-style-verifier"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "checks",
-          "findings"
-        ],
-        "properties": {
-          "input": {
-            "allOf": [
-              {
-                "$ref": "#/$defs/input"
-              }
-            ]
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "violations-found",
-              "invalid-input",
-              "verification-blocked"
-            ]
-          },
-          "risk": false,
-          "parity": false,
-          "environment": false,
-          "dependency_readiness": false,
-          "commands": false,
-          "tests": false,
-          "failures": false,
-          "evidence_validation": false
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "syntax-style-verifier"
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "violations-found"
-            ]
-          }
-        },
-        "required": [
-          "agent",
-          "result_category"
-        ]
-      },
-      "then": {
-        "properties": {
-          "input": {
-            "required": [
-              "tool_validation_receipt_hash"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "feature-parity-verifier"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "checks",
-          "findings",
-          "parity"
-        ],
-        "properties": {
-          "input": {
-            "required": [
-              "csharp_workspace_root",
-              "csharp_code",
-              "intermediate_document",
-              "requirements",
-              "tests_manifest"
-            ]
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "parity-gaps-found",
-              "invalid-input",
-              "verification-blocked"
-            ]
-          },
-          "risk": false,
-          "environment": false,
-          "dependency_readiness": false,
-          "commands": false,
-          "tests": false,
-          "failures": false,
-          "evidence_validation": false
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "security-verifier"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "checks",
-          "findings",
-          "risk"
-        ],
-        "properties": {
-          "input": {
-            "required": [
-              "csharp_workspace_root",
-              "csharp_code",
-              "intermediate_document",
-              "requirements"
-            ]
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "vulnerabilities-found",
-              "invalid-input",
-              "verification-blocked"
-            ]
-          },
-          "parity": false,
-          "environment": false,
-          "dependency_readiness": false,
-          "commands": false,
-          "tests": false,
-          "failures": false,
-          "evidence_validation": false
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "end-to-end-verifier"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "input": {
-            "required": [
-              "requirements",
-              "tests_manifest"
-            ]
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "tests-failed",
-              "invalid-input",
-              "dependency-blocked",
-              "environment-blocked",
-              "verification-blocked"
-            ]
-          },
-          "checks": false,
-          "findings": false,
-          "risk": false,
-          "parity": false
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "end-to-end-verifier"
-          },
-          "result_category": {
-            "enum": [
-              "passed",
-              "tests-failed",
-              "environment-blocked"
-            ]
-          }
-        },
-        "required": [
-          "agent",
-          "result_category"
-        ]
-      },
-      "then": {
-        "required": [
-          "environment",
-          "dependency_readiness",
-          "commands",
-          "tests",
-          "failures",
-          "evidence_validation"
-        ]
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "end-to-end-verifier"
-          },
-          "result_category": {
-            "const": "dependency-blocked"
-          }
-        },
-        "required": [
-          "agent",
-          "result_category"
-        ]
-      },
-      "then": {
-        "required": [
-          "environment",
-          "dependency_readiness"
-        ]
-      }
-    },
-    {
-      "if": {
-        "properties": {
           "result_category": {
             "const": "passed"
           }
@@ -737,7 +520,6 @@
           "result_category": {
             "enum": [
               "violations-found",
-              "parity-gaps-found",
               "vulnerabilities-found",
               "tests-failed"
             ]
@@ -776,6 +558,539 @@
           "verdict": {
             "const": "blocked"
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "syntax-style-verifier"
+          }
+        },
+        "required": [
+          "agent"
+        ]
+      },
+      "then": {
+        "required": [
+          "checks",
+          "findings"
+        ],
+        "properties": {
+          "result_category": {
+            "enum": [
+              "passed",
+              "violations-found",
+              "invalid-input",
+              "verification-blocked"
+            ]
+          },
+          "risk": false,
+          "environment": false,
+          "dependency_readiness": false,
+          "commands": false,
+          "tests": false,
+          "failures": false,
+          "evidence_validation": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "syntax-style-verifier"
+          },
+          "verdict": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "agent",
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "required": [
+              "tool_validation_receipt",
+              "tool_validation_receipt_sha256"
+            ]
+          },
+          "checks": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/check"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": "pass"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "syntax-style-verifier"
+          },
+          "verdict": {
+            "const": "fail"
+          }
+        },
+        "required": [
+          "agent",
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "required": [
+              "tool_validation_receipt",
+              "tool_validation_receipt_sha256"
+            ]
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "checks": {
+                "contains": {
+                  "properties": {
+                    "status": {
+                      "const": "fail"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "security-verifier"
+          }
+        },
+        "required": [
+          "agent"
+        ]
+      },
+      "then": {
+        "required": [
+          "checks",
+          "findings",
+          "risk"
+        ],
+        "properties": {
+          "result_category": {
+            "enum": [
+              "passed",
+              "vulnerabilities-found",
+              "invalid-input",
+              "verification-blocked"
+            ]
+          },
+          "environment": false,
+          "dependency_readiness": false,
+          "commands": false,
+          "tests": false,
+          "failures": false,
+          "evidence_validation": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "security-verifier"
+          },
+          "verdict": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "agent",
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "const": "none"
+          },
+          "checks": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/check"
+                },
+                {
+                  "properties": {
+                    "status": {
+                      "const": "pass"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "security-verifier"
+          },
+          "verdict": {
+            "const": "fail"
+          }
+        },
+        "required": [
+          "agent",
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "findings": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/finding"
+                },
+                {
+                  "required": [
+                    "attack_path",
+                    "impact",
+                    "remediation",
+                    "confidence"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "security"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          }
+        },
+        "required": [
+          "agent"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result_category": {
+            "enum": [
+              "passed",
+              "tests-failed",
+              "invalid-input",
+              "dependency-blocked",
+              "environment-blocked",
+              "verification-blocked"
+            ]
+          },
+          "checks": false,
+          "findings": false,
+          "risk": false,
+          "input": {
+            "required": [
+              "document",
+              "document_sha256",
+              "tests_manifest",
+              "tests_manifest_sha256",
+              "dependency_manifest",
+              "dependency_manifest_sha256",
+              "preflight_result",
+              "preflight_result_sha256"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          },
+          "result_category": {
+            "enum": [
+              "passed",
+              "tests-failed",
+              "environment-blocked"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "result_category"
+        ]
+      },
+      "then": {
+        "required": [
+          "environment",
+          "dependency_readiness",
+          "commands",
+          "tests",
+          "failures",
+          "evidence_validation"
+        ],
+        "properties": {
+          "input": {
+            "required": [
+              "workspace_state_sha256",
+              "runtime_evidence",
+              "runtime_evidence_sha256",
+              "runtime_evidence_validation_receipt",
+              "runtime_evidence_validation_receipt_sha256"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          },
+          "verdict": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "agent",
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "dependency_readiness": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/dependency"
+                },
+                {
+                  "properties": {
+                    "strategy": {
+                      "enum": [
+                        "rust-native",
+                        "generated",
+                        "bridge"
+                      ]
+                    },
+                    "runtime_ready": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "commands": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/command"
+                },
+                {
+                  "properties": {
+                    "exit_code": {
+                      "const": 0
+                    },
+                    "status": {
+                      "const": "pass"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "tests": {
+            "properties": {
+              "passed": {
+                "minimum": 1
+              },
+              "failed": {
+                "const": 0
+              },
+              "skipped": {
+                "const": 0
+              }
+            }
+          },
+          "failures": {
+            "maxItems": 0
+          },
+          "evidence_validation": {
+            "properties": {
+              "deterministic_status": {
+                "const": "pass"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          },
+          "result_category": {
+            "const": "tests-failed"
+          }
+        },
+        "required": [
+          "agent",
+          "result_category"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_validation": {
+            "properties": {
+              "deterministic_status": {
+                "const": "fail"
+              }
+            }
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "commands": {
+                "contains": {
+                  "properties": {
+                    "status": {
+                      "const": "fail"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "tests": {
+                "properties": {
+                  "failed": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "failures": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          },
+          "result_category": {
+            "const": "dependency-blocked"
+          }
+        },
+        "required": [
+          "agent",
+          "result_category"
+        ]
+      },
+      "then": {
+        "required": [
+          "environment",
+          "dependency_readiness"
+        ],
+        "properties": {
+          "dependency_readiness": {
+            "contains": {
+              "properties": {
+                "runtime_ready": {
+                  "const": false
+                }
+              },
+              "required": [
+                "runtime_ready"
+              ]
+            }
+          },
+          "commands": false,
+          "tests": false,
+          "failures": false,
+          "evidence_validation": false
         }
       }
     }

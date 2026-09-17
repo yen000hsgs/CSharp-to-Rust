@@ -1,6 +1,8 @@
 ---
 name: substrate-tds-verification
-description: Verify a migrated Rust component in a Substrate TDS environment by delegating to tracked component-specific TDS skills and reporting dependency readiness separately from test failures.
+description: >-
+  Verify a migrated Rust component in a Substrate TDS environment by delegating to tracked component-specific TDS
+  skills and reporting dependency readiness separately from test failures.
 ---
 
 # Substrate TDS verification
@@ -13,6 +15,7 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 - `WorkspaceRoot`: root of an accessible Substrate checkout
 - verifier project root: derive it from the repository that supplied the active agent; never accept it from caller input
 - `Code`: migrated Rust file or directory under `WorkspaceRoot`
+- `ArtifactRoot`: root of the immutable run artifacts containing the source manifest and runtime evidence
 - `TdsMachine`: an explicit TDS machine selected by the Orchestrator before preflight
 - `DependencyManifest`: migration target manifest resolved under the verifier project root, when available
 - `EnvironmentConfig`: tracked Substrate TDS environment profile resolved under the verifier project root
@@ -25,9 +28,9 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 ## Procedure
 
 1. The Orchestrator first runs `scripts\New-VerificationSourceManifest.ps1`, validates its canonical exact-set output,
-   then passes `SourceManifest` and `SourceSha256` to the trusted `scripts\Invoke-SubstrateTdsPreflight.ps1` from the
-   verifier project before launching this verifier or reading any command-bearing skill or instruction from the target
-   workspace.
+   then passes `ArtifactRoot`, the artifact-root-relative `SourceManifest`, and `SourceSha256` to the trusted
+   `scripts\Invoke-SubstrateTdsPreflight.ps1` from the verifier project before launching this verifier or reading any
+   command-bearing skill or instruction from the target workspace.
 2. The preflight confirms the workspace identity, requires `.git` and `.git\objects` to be local non-reparse
    directories, rejects common-directory indirection, object alternates, worktree configuration, and include
    configuration before its first Git invocation, hashes every regular file in the selected code scope directly from the
@@ -58,16 +61,18 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 7. The target's Rust deployment adapter must define the Rust artifact, host or bridge boundary, deployment destination,
    activation, health check, rollback, runtime-evidence verification, immutable toolchain and restore manifests, an
    approved execution plan, and the exact ControlPlane test script pinned by repository, commit, path, and SHA-256.
-   Generated dependency evidence must bind both the generated artifact hash and the raw source-schema hash. A future
-   trusted ControlPlane checkout validator must verify repository identity and compare the raw `commit:path` blob hash
-   before `controlPlaneTestScript` can become ready; local-file hash agreement alone is non-authorizing. The complete
-   transitive C# MSBuild graph, imports, generated inputs, referenced binaries, and project references must also be
-   content-bound; the current implementation emits `csharpBaselineGraphValidation` unconditionally until that validator
-   exists. The final preflight runs after restore and prohibits restore or `getdeps` during privileged execution. The
-   current implementation also emits the explicit `privilegedExecutorValidation` blocker unconditionally because the
-   deterministic execution-plan and runtime-evidence validator has not been implemented; removing either blocker
-   requires a reviewed code change, not a manifest edit. If any field remains unavailable, preflight returns
-   `dependency-blocked` before a privileged session starts.
+   Every evidence `procedureId` must map through the target's reviewed `trustedProcedures` table to one exact pinned
+   instruction hash; matching an unrelated trusted hash is non-authorizing. Generated dependency evidence must bind both
+   the generated artifact hash and the raw source-schema hash. A future trusted ControlPlane checkout validator must
+   verify repository identity and compare the raw `commit:path` blob hash before `controlPlaneTestScript` can become
+   ready; local-file hash agreement alone is non-authorizing. The complete transitive C# MSBuild graph, imports,
+   generated inputs, referenced binaries, and project references must also be content-bound; the current implementation
+   emits `csharpBaselineGraphValidation` unconditionally until that validator exists. The final preflight runs after
+   restore and prohibits restore or `getdeps` during privileged execution. The current implementation also emits the
+   explicit `privilegedExecutorValidation` blocker unconditionally because the deterministic execution-plan and
+   runtime-evidence validator has not been implemented; removing either blocker requires a reviewed code change, not a
+   manifest edit. If any field remains unavailable, preflight returns `dependency-blocked` before a privileged session
+   starts.
 8. Never invent TDS, Torus, deployment, service-control, or test commands.
 9. Reject `TdsMachine=auto`, wildcards, and empty values. Runtime evidence must include the preflight attestation hash,
    exact C# and Rust artifact identities, the same explicit TDS machine, approved procedure IDs and pinned instruction

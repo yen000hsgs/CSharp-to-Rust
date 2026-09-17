@@ -7,9 +7,8 @@
   "required": [
     "schema_version",
     "run_id",
-    "csharp",
+    "artifact_root",
     "rust",
-    "artifacts",
     "syntax",
     "end_to_end"
   ],
@@ -20,27 +19,8 @@
     "run_id": {
       "$ref": "#/$defs/identifier"
     },
-    "max_retries_per_verifier": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 2,
-      "default": 0
-    },
-    "csharp": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workspace_root",
-        "code"
-      ],
-      "properties": {
-        "workspace_root": {
-          "$ref": "#/$defs/path"
-        },
-        "code": {
-          "$ref": "#/$defs/path"
-        }
-      }
+    "artifact_root": {
+      "$ref": "#/$defs/rootPath"
     },
     "rust": {
       "type": "object",
@@ -53,36 +33,16 @@
       ],
       "properties": {
         "workspace_root": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/rootPath"
         },
         "code": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
         },
         "source_manifest": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
         },
         "source_sha256": {
           "$ref": "#/$defs/sha256"
-        }
-      }
-    },
-    "artifacts": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "intermediate_document",
-        "requirements",
-        "tests_manifest"
-      ],
-      "properties": {
-        "intermediate_document": {
-          "$ref": "#/$defs/path"
-        },
-        "requirements": {
-          "$ref": "#/$defs/path"
-        },
-        "tests_manifest": {
-          "$ref": "#/$defs/path"
         }
       }
     },
@@ -91,7 +51,7 @@
       "additionalProperties": false,
       "properties": {
         "tool_validation_receipt": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
         },
         "tool_validation_receipt_sha256": {
           "$ref": "#/$defs/sha256"
@@ -110,12 +70,30 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "document",
+        "document_sha256",
+        "tests_manifest",
+        "tests_manifest_sha256",
         "environment",
         "tds_machine",
         "dependency_manifest",
-        "preflight_result"
+        "dependency_manifest_sha256",
+        "preflight_result",
+        "preflight_result_sha256"
       ],
       "properties": {
+        "document": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "document_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tests_manifest": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "tests_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
         "environment": {
           "const": "substrate-tds"
         },
@@ -123,19 +101,25 @@
           "$ref": "#/$defs/machine"
         },
         "dependency_manifest": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
+        },
+        "dependency_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
         },
         "preflight_result": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
+        },
+        "preflight_result_sha256": {
+          "$ref": "#/$defs/sha256"
         },
         "runtime_evidence": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
         },
         "runtime_evidence_sha256": {
           "$ref": "#/$defs/sha256"
         },
         "runtime_evidence_validation_receipt": {
-          "$ref": "#/$defs/path"
+          "$ref": "#/$defs/relativePath"
         },
         "runtime_evidence_validation_receipt_sha256": {
           "$ref": "#/$defs/sha256"
@@ -171,10 +155,37 @@
       "minLength": 1,
       "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
     },
-    "path": {
+    "rootPath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\/@()+-]+$"
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\()@+-]+$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_ .\\\\/()@+-]+$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^[A-Za-z]:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^[\\\\/]"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        }
+      ]
     },
     "machine": {
       "type": "string",

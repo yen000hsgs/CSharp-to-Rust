@@ -25,14 +25,17 @@ in `.github/agents/`.
 | `gentest` | document.json, C# source | unit / functional / e2e tests, test manifest, golden cases | hoangnguyen@ |
 | `feature-parity-verifier` | document.json, C#, tests, Rust | parity report (gaps + behavioral mismatches) | hoangnguyen@ |
 | `code-agent` | document.json, tests | Rust crate, code report | hoangnguyen@ |
+| `verifier-orchestrator` | Rust and authenticated verifier artifacts | aggregate verdict for Yen's verifier subgroup | Yen Nguyen |
+| `syntax-style-verifier` | Rust and authenticated compiler/lint receipt | syntax and style verdict | Yen Nguyen |
+| `security-verifier` | Rust | security verdict | Yen Nguyen |
+| `end-to-end-verifier` | Rust and authenticated runtime evidence | TDS runtime verdict | Yen Nguyen |
 
-Upstream (C# → intermediate, requirements) and the remaining verifiers
-(syntax/style, security, end-to-end) are owned by the rest of the team.
+Upstream C# analysis and requirements are owned by the rest of the team. Yen's verifier subgroup is documented in
+`.github/agents/README.md`.
 
-**The orchestrator owns control flow.** It supplies each agent's inputs and
-output paths, and decides how each result is used. These three agents do their
-job and hand back a structured summary — they never invoke each other and never
-decide what runs next.
+**The orchestrator owns control flow.** It supplies each agent's inputs and output paths, and decides how each result is
+used. Generation and specialist verifier agents hand back structured results rather than routing the pipeline
+themselves.
 
 ## Contracts
 

@@ -16,6 +16,31 @@
     "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionCopy.instructions.md",
     "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionTest.instructions.md"
   ],
+  "trustedProcedures": [
+    {
+      "id": "route-resolution-build",
+      "instructionPath": "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionBuild.instructions.md",
+      "evidenceFields": [
+        "dependency",
+        "artifact"
+      ]
+    },
+    {
+      "id": "route-resolution-copy",
+      "instructionPath": "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionCopy.instructions.md",
+      "evidenceFields": [
+        "activation",
+        "rollback"
+      ]
+    },
+    {
+      "id": "route-resolution-test",
+      "instructionPath": "sources\\dev\\cafe\\src\\.github\\instructions\\RouteResolution\\RouteResolutionTest.instructions.md",
+      "evidenceFields": [
+        "healthCheck"
+      ]
+    }
+  ],
   "rustDeploymentAdapter": {
     "root": "verifier-project",
     "path": "targets\\route-resolution-client-tds-adapter.json"

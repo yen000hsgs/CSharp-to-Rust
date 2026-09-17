@@ -5,4 +5,5 @@ README.md text eol=lf
 .github/verification-environments/*.json text eol=lf
 targets/*.json text eol=lf
 contracts/*.json text eol=lf
+docs/*.md text eol=lf
 scripts/*.ps1 text eol=lf

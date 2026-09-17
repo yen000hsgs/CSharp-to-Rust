@@ -10,6 +10,9 @@ param(
     [string] $Code,
 
     [Parameter(Mandatory = $true)]
+    [string] $ArtifactRoot,
+
+    [Parameter(Mandatory = $true)]
     [string] $SourceManifest,
 
     [Parameter(Mandatory = $true)]
@@ -45,7 +48,7 @@ trap {
         exit 2
     }
 
-    if ($message -match '^(Trusted root|Trusted Git executable|Path escapes|Path contains|WorkspaceRoot|Git administrative|Git object|Git replacement|Git index|Git attributes|Sparse checkout|Repository-local Git|Untracked workspace|Required build input|Code path|Code file|EnvironmentConfig|DependencyManifest|Dependency manifest|RunId|TdsMachine|Substrate origin|Trusted instruction|Dependency entry|Attestation key|AttestationKeyId|Generated preflight|Source manifest|SourceSha256)') {
+    if ($message -match '^(ArtifactRoot|Trusted root|Trusted Git executable|Path escapes|Path contains|WorkspaceRoot|Git administrative|Git object|Git replacement|Git index|Git attributes|Sparse checkout|Repository-local Git|Untracked workspace|Required build input|Code path|Code file|EnvironmentConfig|DependencyManifest|Dependency manifest|RunId|TdsMachine|Substrate origin|Trusted instruction|Dependency entry|Attestation key|AttestationKeyId|Generated preflight|Source manifest|SourceSha256)') {
         [Console]::Error.WriteLine("INVALID_INPUT: $message")
         exit 2
     }
@@ -241,7 +244,10 @@ function Test-FileEvidence {
         [string[]] $AdditionalProperties = @(),
 
         [Parameter(Mandatory = $true)]
-        [System.Collections.IDictionary] $TrustedInstructionHashes
+        [string] $EvidenceField,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary] $TrustedProcedures
     )
 
     $requiredProperties = @('artifact', 'sha256', 'validation') + @($AdditionalProperties | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -273,7 +279,14 @@ function Test-FileEvidence {
         return $false
     }
 
-    return $Evidence.validation.instructionHash -in @($TrustedInstructionHashes.Values)
+    $procedureId = [string]$Evidence.validation.procedureId
+    if (-not $TrustedProcedures.Contains($procedureId)) {
+        return $false
+    }
+
+    $procedure = $TrustedProcedures[$procedureId]
+    return $procedure.evidenceFields -contains $EvidenceField -and
+        $Evidence.validation.instructionHash -eq $procedure.instructionHash
 }
 
 function Test-GitAdministrativeStorage {
@@ -507,7 +520,7 @@ if (-not $normalizedDependencyManifest.Equals($expectedDependencyManifest, [Syst
 
 $environmentPath = Resolve-ContainedPath -Root $verifierRoot -Child $expectedEnvironmentConfig
 $manifestPath = Resolve-ContainedPath -Root $verifierRoot -Child $expectedDependencyManifest
-$sourceManifestPath = Resolve-ContainedPath -Root $verifierRoot -Child $SourceManifest
+$sourceManifestPath = Resolve-ContainedPath -Root $ArtifactRoot -Child $SourceManifest
 $codePath = Resolve-ContainedPath -Root $WorkspaceRoot -Child $Code
 if (-not (Test-Path -LiteralPath $codePath)) {
     throw "Code path does not exist: $Code"
@@ -634,6 +647,24 @@ foreach ($relativePath in $manifest.trustedInstructionPaths) {
 
     $instructionHashes[$relativePath] = $workspaceInstructionHash
 }
+$trustedProcedures = [ordered]@{}
+if (-not (Test-RequiredProperties -Value $manifest -Properties @('trustedProcedures'))) {
+    throw "Dependency manifest must define trustedProcedures."
+}
+foreach ($procedure in $manifest.trustedProcedures) {
+    if (-not (Test-RequiredProperties -Value $procedure -Properties @('id', 'instructionPath', 'evidenceFields')) -or
+        $procedure.id -notmatch '^[A-Za-z0-9._-]+$' -or
+        $trustedProcedures.Contains($procedure.id) -or
+        -not $instructionHashes.Contains($procedure.instructionPath) -or
+        @($procedure.evidenceFields).Count -eq 0) {
+        throw "Dependency manifest contains an invalid or duplicate trusted procedure."
+    }
+
+    $trustedProcedures[$procedure.id] = [pscustomobject]@{
+        instructionHash = $instructionHashes[$procedure.instructionPath]
+        evidenceFields = @($procedure.evidenceFields)
+    }
+}
 
 $allowedStrategies = @('rust-native', 'generated', 'bridge', 'test-double', 'unavailable')
 $blockingDependencies = @()
@@ -664,7 +695,8 @@ foreach ($dependency in $manifest.dependencies) {
         default { @() }
     }
     $hasEvidence = $dependency.strategy -notin @('test-double', 'unavailable') -and
-        (Test-FileEvidence -Evidence $dependency.evidence -AdditionalProperties $requiredEvidence -TrustedInstructionHashes $instructionHashes)
+        (Test-FileEvidence -Evidence $dependency.evidence -AdditionalProperties $requiredEvidence `
+            -EvidenceField 'dependency' -TrustedProcedures $trustedProcedures)
     if ($dependency.strategy -eq 'generated' -and $hasEvidence) {
         try {
             if ($dependency.evidence.source.Replace('/', '\') -ne $dependency.source.Replace('/', '\')) {
@@ -707,7 +739,7 @@ foreach ($field in $requiredAdapterEvidence.Keys) {
             artifact = $value.evidence.path
             sha256 = $value.evidence.sha256
             validation = $value.evidence.validation
-        }) -AdditionalProperties @() -TrustedInstructionHashes $instructionHashes
+        }) -AdditionalProperties @() -EvidenceField 'artifact' -TrustedProcedures $trustedProcedures
     }
     elseif ($hasEvidence -and $field -in @('toolchainManifest', 'restoreState', 'executionPlan', 'controlPlaneTestScript')) {
         try {
@@ -721,7 +753,15 @@ foreach ($field in $requiredAdapterEvidence.Keys) {
         }
     }
     elseif ($hasEvidence -and $field -in @('activation', 'healthCheck', 'rollback')) {
-        $hasEvidence = $value.evidence.instructionHash -in @($instructionHashes.Values)
+        $procedureId = [string]$value.evidence.procedureId
+        if ($trustedProcedures.Contains($procedureId)) {
+            $procedure = $trustedProcedures[$procedureId]
+            $hasEvidence = $procedure.evidenceFields -contains $field -and
+                $value.evidence.instructionHash -eq $procedure.instructionHash
+        }
+        else {
+            $hasEvidence = $false
+        }
     }
 
     if ($null -eq $value -or $value.status -ne 'ready' -or -not $hasEvidence) {

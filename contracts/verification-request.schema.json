@@ -8,6 +8,7 @@
     "schema_version",
     "run_id",
     "agent",
+    "artifact_root",
     "workspace_root",
     "code",
     "source_manifest",
@@ -23,42 +24,41 @@
     "agent": {
       "enum": [
         "syntax-style-verifier",
-        "feature-parity-verifier",
         "security-verifier",
         "end-to-end-verifier"
       ]
     },
+    "artifact_root": {
+      "$ref": "#/$defs/rootPath"
+    },
     "workspace_root": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/rootPath"
     },
     "code": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
     },
     "source_manifest": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
     },
     "source_sha256": {
       "$ref": "#/$defs/sha256"
     },
-    "csharp_workspace_root": {
-      "$ref": "#/$defs/path"
-    },
-    "csharp_code": {
-      "$ref": "#/$defs/path"
-    },
-    "intermediate_document": {
-      "$ref": "#/$defs/path"
-    },
-    "requirements": {
-      "$ref": "#/$defs/path"
-    },
-    "tests_manifest": {
-      "$ref": "#/$defs/path"
-    },
     "tool_validation_receipt": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
     },
     "tool_validation_receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "document": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "document_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "tests_manifest": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "tests_manifest_sha256": {
       "$ref": "#/$defs/sha256"
     },
     "environment": {
@@ -68,19 +68,25 @@
       "$ref": "#/$defs/identifier"
     },
     "dependency_manifest": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
+    },
+    "dependency_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
     },
     "preflight_result": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
+    },
+    "preflight_result_sha256": {
+      "$ref": "#/$defs/sha256"
     },
     "runtime_evidence": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
     },
     "runtime_evidence_sha256": {
       "$ref": "#/$defs/sha256"
     },
     "runtime_evidence_validation_receipt": {
-      "$ref": "#/$defs/path"
+      "$ref": "#/$defs/relativePath"
     },
     "runtime_evidence_validation_receipt_sha256": {
       "$ref": "#/$defs/sha256"
@@ -92,10 +98,37 @@
       "minLength": 1,
       "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
     },
-    "path": {
+    "rootPath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\/@()+-]+$"
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9_ .:\\\\()@+-]+$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_ .\\\\/()@+-]+$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^[A-Za-z]:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^[\\\\/]"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        }
+      ]
     },
     "sha256": {
       "type": "string",
@@ -141,15 +174,16 @@
       },
       "then": {
         "properties": {
-          "csharp_workspace_root": false,
-          "csharp_code": false,
-          "intermediate_document": false,
-          "requirements": false,
+          "document": false,
+          "document_sha256": false,
           "tests_manifest": false,
+          "tests_manifest_sha256": false,
           "environment": false,
           "tds_machine": false,
           "dependency_manifest": false,
+          "dependency_manifest_sha256": false,
           "preflight_result": false,
+          "preflight_result_sha256": false,
           "runtime_evidence": false,
           "runtime_evidence_sha256": false,
           "runtime_evidence_validation_receipt": false,
@@ -161,46 +195,29 @@
       "if": {
         "properties": {
           "agent": {
-            "enum": [
-              "feature-parity-verifier",
-              "security-verifier"
-            ]
+            "const": "security-verifier"
           }
         }
       },
       "then": {
-        "required": [
-          "csharp_workspace_root",
-          "csharp_code",
-          "intermediate_document",
-          "requirements"
-        ],
         "properties": {
+          "tool_validation_receipt": false,
+          "tool_validation_receipt_sha256": false,
+          "document": false,
+          "document_sha256": false,
+          "tests_manifest": false,
+          "tests_manifest_sha256": false,
           "environment": false,
           "tds_machine": false,
           "dependency_manifest": false,
+          "dependency_manifest_sha256": false,
           "preflight_result": false,
+          "preflight_result_sha256": false,
           "runtime_evidence": false,
           "runtime_evidence_sha256": false,
           "runtime_evidence_validation_receipt": false,
-          "runtime_evidence_validation_receipt_sha256": false,
-          "tool_validation_receipt": false,
-          "tool_validation_receipt_sha256": false
+          "runtime_evidence_validation_receipt_sha256": false
         }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "agent": {
-            "const": "feature-parity-verifier"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "tests_manifest"
-        ]
       }
     },
     {
@@ -213,12 +230,16 @@
       },
       "then": {
         "required": [
-          "requirements",
+          "document",
+          "document_sha256",
           "tests_manifest",
+          "tests_manifest_sha256",
           "environment",
           "tds_machine",
           "dependency_manifest",
-          "preflight_result"
+          "dependency_manifest_sha256",
+          "preflight_result",
+          "preflight_result_sha256"
         ],
         "properties": {
           "environment": {
@@ -233,9 +254,6 @@
             },
             "pattern": "^[^*?]+$"
           },
-          "csharp_workspace_root": false,
-          "csharp_code": false,
-          "intermediate_document": false,
           "tool_validation_receipt": false,
           "tool_validation_receipt_sha256": false
         }
