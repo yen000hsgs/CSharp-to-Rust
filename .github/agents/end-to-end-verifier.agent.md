@@ -21,8 +21,8 @@ mismatched agent names, or an invalid schema as `invalid-input`.
 
 Resolve the Rust scope inside `workspace_root`; resolve the document, generated test manifest, preflight result, and
 runtime evidence inside `artifact_root`; and resolve the dependency manifest inside the verifier project. Echo every
-path, hash, and identity prevalidated by the deterministic host. Do not claim to perform cryptographic validation with
-read/search tools.
+path, hash, and identity prevalidated by the deterministic host, including `environment` and `tds_machine`. Do not claim
+to perform cryptographic validation with read/search tools.
 
 ## Verification
 

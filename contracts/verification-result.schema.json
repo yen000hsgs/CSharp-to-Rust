@@ -102,6 +102,11 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f])[A-Za-z0-9._-]+$"
+    },
     "input": {
       "type": "object",
       "additionalProperties": false,
@@ -152,6 +157,13 @@
         },
         "tests_manifest_sha256": {
           "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tds_machine": {
+          "$ref": "#/$defs/identifier"
         },
         "dependency_manifest": {
           "type": "string",
@@ -854,11 +866,31 @@
               "document_sha256",
               "tests_manifest",
               "tests_manifest_sha256",
+              "environment",
+              "tds_machine",
               "dependency_manifest",
               "dependency_manifest_sha256",
               "preflight_result",
               "preflight_result_sha256"
-            ]
+            ],
+            "properties": {
+              "environment": {
+                "const": "substrate-tds"
+              },
+              "tds_machine": {
+                "$ref": "#/$defs/identifier",
+                "not": {
+                  "anyOf": [
+                    {
+                      "const": "*"
+                    },
+                    {
+                      "pattern": "^[aA][uU][tT][oO]$"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }

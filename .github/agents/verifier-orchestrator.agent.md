@@ -40,8 +40,9 @@ request, perform only structural and identity consistency checks that are possib
    `blocked` with category `verifier-unavailable`.
 4. Check every child response against the structure and invariants in `contracts\verification-result.schema.json`.
    Require exact equality of schema version, run ID, agent, artifact root, workspace, code, source hash, and all
-   applicable artifact hashes with the child request. Treat malformed, contradictory, or identity-mismatched output as
-   `blocked` with category `invalid-verifier-result`.
+   applicable artifact hashes with the child request. For end-to-end results, also require exact equality of environment
+   and TDS machine. Treat malformed, contradictory, or identity-mismatched output as `blocked` with category
+   `invalid-verifier-result`.
 5. Invoke `end-to-end-verifier` only after syntax/style and security both return `pass`. If either static gate fails or
    is blocked, record end-to-end as `not-run` and do not request runtime execution or deployment.
 6. The end-to-end verifier remains read-only and consumes only pre-existing authenticated preflight and runtime
@@ -58,5 +59,6 @@ request, perform only structural and identity consistency checks that are possib
 Return exactly one JSON object and no Markdown. It must conform to
 `contracts\verifier-orchestration-result.schema.json`, include one gate entry for each of the three verifier names, and
 copy every input artifact hash into `input_identity`. Preserve concise summaries from valid child results without
-copying unbounded logs or source text. The result is a candidate model verdict; the deterministic host must validate it
-before using it as a release gate.
+copying unbounded logs or source text. Copy the end-to-end environment and TDS machine into `input_identity` without
+rewriting them. The result is a candidate model verdict; the deterministic host must validate it before using it as a
+release gate.

@@ -35,25 +35,38 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$sourceExclusionPolicy = 'generated-output-v1'
+
+function Write-PreflightDiagnostic {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Message
+    )
+
+    $bytes = [Text.Encoding]::UTF8.GetBytes("$Message$([Environment]::NewLine)")
+    $standardError = [Console]::OpenStandardError()
+    $standardError.Write($bytes, 0, $bytes.Length)
+    $standardError.Flush()
+}
 
 trap {
     $message = $_.Exception.Message
     if ($message.StartsWith('ENVIRONMENT_BLOCKED:', [System.StringComparison]::Ordinal)) {
-        [Console]::Error.WriteLine($message)
+        Write-PreflightDiagnostic -Message $message
         exit 4
     }
 
     if ($message.StartsWith('INVALID_INPUT:', [System.StringComparison]::Ordinal)) {
-        [Console]::Error.WriteLine($message)
+        Write-PreflightDiagnostic -Message $message
         exit 2
     }
 
-    if ($message -match '^(ArtifactRoot|Trusted root|Trusted Git executable|Path escapes|Path contains|WorkspaceRoot|Git administrative|Git object|Git replacement|Git index|Git attributes|Sparse checkout|Repository-local Git|Untracked workspace|Required build input|Code path|Code file|EnvironmentConfig|DependencyManifest|Dependency manifest|RunId|TdsMachine|Substrate origin|Trusted instruction|Dependency entry|Attestation key|AttestationKeyId|Generated preflight|Source manifest|SourceSha256)') {
-        [Console]::Error.WriteLine("INVALID_INPUT: $message")
+    if ($message -match '^(ArtifactRoot|Trusted root|Trusted Git executable|Path escapes|Path contains|Path must|WorkspaceRoot|Git administrative|Git object|Git replacement|Git index|Git attributes|Sparse checkout|Repository-local Git|Untracked workspace|Required build input|Code path|Code file|EnvironmentConfig|DependencyManifest|Dependency manifest|RunId|TdsMachine|Substrate origin|Trusted instruction|Dependency entry|Attestation key|AttestationKeyId|Generated preflight|Source manifest|SourceSha256)') {
+        Write-PreflightDiagnostic -Message "INVALID_INPUT: $message"
         exit 2
     }
 
-    [Console]::Error.WriteLine("PREFLIGHT_ERROR: $message")
+    Write-PreflightDiagnostic -Message "PREFLIGHT_ERROR: $message"
     exit 5
 }
 
@@ -74,8 +87,24 @@ function Resolve-ContainedPath {
         throw "Trusted root does not exist: $Root"
     }
 
+    $normalizedChild = $Child.Replace('/', '\')
+    $childSegments = $normalizedChild.Split([char] '\')
+    if ([System.IO.Path]::IsPathRooted($normalizedChild) -or
+        $normalizedChild.StartsWith('\\?\', [System.StringComparison]::Ordinal) -or
+        $normalizedChild.StartsWith('\\.\', [System.StringComparison]::Ordinal) -or
+        $normalizedChild.StartsWith('\', [System.StringComparison]::Ordinal) -or
+        $normalizedChild.Contains(':') -or
+        @($childSegments | Where-Object {
+            [string]::IsNullOrEmpty($_) -or
+            $_ -eq '..' -or
+            ($_ -eq '.' -and $normalizedChild -ne '.') -or
+            ($_ -ne '.' -and ($_.EndsWith('.') -or $_.EndsWith(' ')))
+        }).Count -gt 0) {
+        throw "Path must be relative to its trusted root: $Child"
+    }
+
     $resolvedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
-    $resolvedChild = [System.IO.Path]::GetFullPath((Join-Path $resolvedRoot $Child))
+    $resolvedChild = [System.IO.Path]::GetFullPath((Join-Path $resolvedRoot $normalizedChild))
     $isRoot = $resolvedChild.Equals($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)
     $isChild = $resolvedChild.StartsWith("$resolvedRoot$([System.IO.Path]::DirectorySeparatorChar)", [System.StringComparison]::OrdinalIgnoreCase)
     if (-not $isRoot -and -not $isChild) {
@@ -108,6 +137,74 @@ function Resolve-ContainedPath {
     }
 
     return $resolvedChild
+}
+
+function Get-SourceFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Directory
+    )
+
+    foreach ($entry in Get-ChildItem -LiteralPath $Directory -Force) {
+        if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Code path contains a symbolic link or junction: $($entry.FullName)"
+        }
+
+        if ($entry.PSIsContainer) {
+            if (Test-IsGeneratedSourceDirectory -Directory $entry) {
+                continue
+            }
+
+            Get-SourceFiles -Directory $entry.FullName
+            continue
+        }
+
+        $entry
+    }
+}
+
+function Test-IsGeneratedSourceDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.DirectoryInfo] $Directory
+    )
+
+    if ($Directory.Name -in @('.git', '.vs')) {
+        return $true
+    }
+    if ($null -eq $Directory.Parent) {
+        return $false
+    }
+    if ($Directory.Name -in @('bin', 'obj')) {
+        $projectFile = Get-ChildItem -LiteralPath $Directory.Parent.FullName -File -Force |
+            Where-Object { $_.Extension -in @('.csproj', '.fsproj', '.vbproj') } |
+            Select-Object -First 1
+        return $null -ne $projectFile
+    }
+    if ($Directory.Name -eq 'target') {
+        return Test-Path -LiteralPath (Join-Path $Directory.Parent.FullName 'Cargo.toml') -PathType Leaf
+    }
+
+    return $false
+}
+
+function Assert-SourceScopeAllowed {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.FileSystemInfo] $Item,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Workspace
+    )
+
+    $current = if ($Item -is [System.IO.FileInfo]) { $Item.Directory } else { $Item }
+    while ($null -ne $current -and
+        -not $current.FullName.TrimEnd('\', '/').Equals($Workspace, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-IsGeneratedSourceDirectory -Directory $current) {
+            throw "Code path must not select generated output: $($current.FullName)"
+        }
+        $current = $current.Parent
+    }
 }
 
 function Invoke-Git {
@@ -387,13 +484,7 @@ function Get-WorkspaceState {
         @((Get-Item -Force -LiteralPath $CodePath))
     }
     else {
-        $descendants = @(Get-ChildItem -LiteralPath $CodePath -Recurse -Force)
-        $reparsePoint = $descendants | Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } | Select-Object -First 1
-        if ($null -ne $reparsePoint) {
-            throw "Code path contains a symbolic link or junction: $($reparsePoint.FullName)"
-        }
-
-        @($descendants | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName)
+        @(Get-SourceFiles -Directory $CodePath | Sort-Object FullName)
     }
     if ($codeEntries.Count -eq 0) {
         throw "Code path contains no files: $CodePath"
@@ -521,10 +612,16 @@ if (-not $normalizedDependencyManifest.Equals($expectedDependencyManifest, [Syst
 $environmentPath = Resolve-ContainedPath -Root $verifierRoot -Child $expectedEnvironmentConfig
 $manifestPath = Resolve-ContainedPath -Root $verifierRoot -Child $expectedDependencyManifest
 $sourceManifestPath = Resolve-ContainedPath -Root $ArtifactRoot -Child $SourceManifest
+if (-not (Test-Path -LiteralPath $sourceManifestPath -PathType Leaf)) {
+    throw "Source manifest does not exist or is not a file: $SourceManifest"
+}
 $codePath = Resolve-ContainedPath -Root $WorkspaceRoot -Child $Code
 if (-not (Test-Path -LiteralPath $codePath)) {
     throw "Code path does not exist: $Code"
 }
+$codeItem = Get-Item -Force -LiteralPath $codePath
+Assert-SourceScopeAllowed -Item $codeItem -Workspace ([System.IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/'))
+$codeRelativePath = [System.IO.Path]::GetRelativePath([System.IO.Path]::GetFullPath($WorkspaceRoot), $codePath)
 
 $environment = Get-Content -Raw $environmentPath | ConvertFrom-Json
 $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
@@ -539,13 +636,25 @@ try {
 catch {
     throw "Source manifest is not valid UTF-8."
 }
-if ($sourceManifestJson.StartsWith([char]0xFEFF) -or
-    -not ($sourceManifestJson | Test-Json -SchemaFile (Resolve-ContainedPath -Root $verifierRoot -Child 'contracts\source-manifest.schema.json'))) {
+if ($sourceManifestJson.StartsWith([char]0xFEFF)) {
+    throw "Source manifest does not match its JSON schema or canonical encoding."
+}
+try {
+    $sourceManifestSchemaValid = $sourceManifestJson |
+        Test-Json -SchemaFile (Resolve-ContainedPath -Root $verifierRoot -Child 'contracts\source-manifest.schema.json') -ErrorAction Stop
+}
+catch {
+    throw "Source manifest does not match its JSON schema or canonical encoding."
+}
+if (-not $sourceManifestSchemaValid) {
     throw "Source manifest does not match its JSON schema or canonical encoding."
 }
 $sourceManifestObject = $sourceManifestJson | ConvertFrom-Json
 if ((ConvertTo-CanonicalJson -Value $sourceManifestObject) -ne $sourceManifestJson) {
     throw "Source manifest bytes are not canonical sorted-json-integer-v1."
+}
+if ($sourceManifestObject.exclusion_policy -ne $sourceExclusionPolicy) {
+    throw "Source manifest uses an unsupported source exclusion policy."
 }
 if ($manifest.environmentProfile.path -ne $expectedEnvironmentConfig) {
     throw "Dependency manifest does not reference the reviewed environment profile."
@@ -573,12 +682,9 @@ Test-GitAdministrativeStorage
 
 $adapterPath = Resolve-ContainedPath -Root $verifierRoot -Child $manifest.rustDeploymentAdapter.path
 $adapter = Get-Content -Raw $adapterPath | ConvertFrom-Json
-$codeRelativePath = [System.IO.Path]::GetRelativePath([System.IO.Path]::GetFullPath($WorkspaceRoot), $codePath)
 $workspaceState = Get-WorkspaceState -CodePath $codePath
-$expectedManifestWorkspace = [System.IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\', '/')
-if (-not $sourceManifestObject.workspace_root.TrimEnd('\', '/').Equals($expectedManifestWorkspace, [System.StringComparison]::OrdinalIgnoreCase) -or
-    $sourceManifestObject.code.Replace('/', '\') -ne $codeRelativePath) {
-    throw "Source manifest identifies a different workspace or code scope."
+if ($sourceManifestObject.code.Replace('/', '\') -ne $codeRelativePath) {
+    throw "Source manifest identifies a different code scope."
 }
 $manifestCodeFiles = [ordered]@{}
 $manifestPathSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)

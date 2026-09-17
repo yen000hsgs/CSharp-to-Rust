@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$sourceExclusionPolicy = 'generated-output-v1'
 
 function ConvertTo-CanonicalJson {
     param(
@@ -65,6 +66,74 @@ function ConvertTo-CanonicalJson {
     throw "Unsupported canonical JSON value type: $($Value.GetType().FullName)"
 }
 
+function Get-SourceFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Directory
+    )
+
+    foreach ($entry in Get-ChildItem -LiteralPath $Directory -Force) {
+        if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Source scope contains a symbolic link or junction: $($entry.FullName)"
+        }
+
+        if ($entry.PSIsContainer) {
+            if (Test-IsGeneratedSourceDirectory -Directory $entry) {
+                continue
+            }
+
+            Get-SourceFiles -Directory $entry.FullName
+            continue
+        }
+
+        $entry
+    }
+}
+
+function Test-IsGeneratedSourceDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.DirectoryInfo] $Directory
+    )
+
+    if ($Directory.Name -in @('.git', '.vs')) {
+        return $true
+    }
+    if ($null -eq $Directory.Parent) {
+        return $false
+    }
+    if ($Directory.Name -in @('bin', 'obj')) {
+        $projectFile = Get-ChildItem -LiteralPath $Directory.Parent.FullName -File -Force |
+            Where-Object { $_.Extension -in @('.csproj', '.fsproj', '.vbproj') } |
+            Select-Object -First 1
+        return $null -ne $projectFile
+    }
+    if ($Directory.Name -eq 'target') {
+        return Test-Path -LiteralPath (Join-Path $Directory.Parent.FullName 'Cargo.toml') -PathType Leaf
+    }
+
+    return $false
+}
+
+function Assert-SourceScopeAllowed {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.IO.FileSystemInfo] $Item,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Workspace
+    )
+
+    $current = if ($Item -is [System.IO.FileInfo]) { $Item.Directory } else { $Item }
+    while ($null -ne $current -and
+        -not $current.FullName.TrimEnd('\', '/').Equals($Workspace, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-IsGeneratedSourceDirectory -Directory $current) {
+            throw "Code must not select generated output: $($current.FullName)"
+        }
+        $current = $current.Parent
+    }
+}
+
 foreach ($pathValue in @($WorkspaceRoot, $OutputPath)) {
     $normalizedPathValue = $pathValue.Replace('/', '\')
     if ($normalizedPathValue.StartsWith('\\?\', [System.StringComparison]::Ordinal) -or
@@ -79,13 +148,31 @@ $workspace = [System.IO.Path]::GetFullPath($WorkspaceRoot.Replace('/', '\')).Tri
 if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
     throw "WorkspaceRoot does not exist."
 }
-$codePath = [System.IO.Path]::GetFullPath((Join-Path $workspace $Code))
+$normalizedCodeInput = $Code.Replace('/', '\')
+$codeSegments = $normalizedCodeInput.Split([char] '\')
+if ([string]::IsNullOrWhiteSpace($normalizedCodeInput) -or
+    [System.IO.Path]::IsPathRooted($normalizedCodeInput) -or
+    $normalizedCodeInput.StartsWith('\\?\', [System.StringComparison]::Ordinal) -or
+    $normalizedCodeInput.StartsWith('\\.\', [System.StringComparison]::Ordinal) -or
+    $normalizedCodeInput.Contains(':') -or
+    $normalizedCodeInput.IndexOfAny([char[]] '<>"|?*') -ge 0 -or
+    @($normalizedCodeInput.ToCharArray() | Where-Object { [char]::IsControl($_) }).Count -gt 0 -or
+    @($codeSegments | Where-Object {
+        [string]::IsNullOrEmpty($_) -or
+        $_ -eq '..' -or
+        ($_ -eq '.' -and $normalizedCodeInput -ne '.') -or
+        ($_ -ne '.' -and ($_.EndsWith('.') -or $_.EndsWith(' ')))
+    }).Count -gt 0) {
+    throw "Code must be a canonical relative path."
+}
+$codePath = [System.IO.Path]::GetFullPath((Join-Path $workspace $normalizedCodeInput))
 $output = [System.IO.Path]::GetFullPath($OutputPath.Replace('/', '\'))
 $codeIsWorkspace = $codePath.TrimEnd('\', '/').Equals($workspace, [System.StringComparison]::OrdinalIgnoreCase)
 if ((-not $codeIsWorkspace -and -not $codePath.StartsWith("$workspace$([System.IO.Path]::DirectorySeparatorChar)", [System.StringComparison]::OrdinalIgnoreCase)) -or
     -not (Test-Path -LiteralPath $codePath)) {
     throw "Code must resolve inside WorkspaceRoot."
 }
+$relativeCodeScope = [System.IO.Path]::GetRelativePath($workspace, $codePath)
 $normalizedCodePath = $codePath.TrimEnd('\', '/')
 if ($output.Equals($normalizedCodePath, [System.StringComparison]::OrdinalIgnoreCase) -or
     $output.StartsWith("$normalizedCodePath$([System.IO.Path]::DirectorySeparatorChar)", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -117,6 +204,7 @@ $item = Get-Item -Force -LiteralPath $codePath
 if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw "Source scope contains a symbolic link or junction: $($item.FullName)"
 }
+Assert-SourceScopeAllowed -Item $item -Workspace $workspace
 $current = if ($item -is [System.IO.FileInfo]) { $item.Directory } else { $item }
 $reachedRoot = $false
 while ($null -ne $current) {
@@ -137,12 +225,7 @@ $entries = if (Test-Path -LiteralPath $codePath -PathType Leaf) {
     @((Get-Item -Force -LiteralPath $codePath))
 }
 else {
-    $descendants = @(Get-ChildItem -LiteralPath $codePath -Recurse -Force)
-    $reparsePoint = $descendants | Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } | Select-Object -First 1
-    if ($null -ne $reparsePoint) {
-        throw "Source scope contains a symbolic link or junction: $($reparsePoint.FullName)"
-    }
-    @($descendants | Where-Object { -not $_.PSIsContainer })
+    @(Get-SourceFiles -Directory $codePath)
 }
 if ($entries.Count -eq 0) {
     throw "Source scope contains no files."
@@ -164,13 +247,24 @@ $files = foreach ($path in $paths) {
     }
 }
 $manifest = [ordered]@{
-    schema_version = '1.0'
+    schema_version = '1.1'
     canonicalization = 'sorted-json-integer-v1'
-    workspace_root = $workspace
-    code = [System.IO.Path]::GetRelativePath($workspace, $codePath)
+    code = $relativeCodeScope
+    exclusion_policy = $sourceExclusionPolicy
     files = @($files)
 }
 $canonical = ConvertTo-CanonicalJson $manifest
+$schemaPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'contracts\source-manifest.schema.json'
+try {
+    $schemaValid = $canonical | Test-Json -SchemaFile $schemaPath -ErrorAction Stop
+}
+catch {
+    throw "Generated source manifest could not be validated: $($_.Exception.Message)"
+}
+if (-not $schemaValid) {
+    throw "Generated source manifest does not match its JSON schema."
+}
+
 $parent = Split-Path -Parent $output
 if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null

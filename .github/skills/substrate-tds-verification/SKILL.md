@@ -28,7 +28,12 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 ## Procedure
 
 1. The Orchestrator first runs `scripts\New-VerificationSourceManifest.ps1`, validates its canonical exact-set output,
-   then passes `ArtifactRoot`, the artifact-root-relative `SourceManifest`, and `SourceSha256` to the trusted
+   which excludes repository metadata plus standard .NET `bin`/`obj` and Cargo `target` directories only when project
+   markers identify the directory as a direct generated-output child, while preserving nested source layouts such as
+   `src\bin`, `src\obj`, and `src\target`. It validates the canonical bytes against
+   `contracts\source-manifest.schema.json` before writing them. The manifest contains only workspace-relative paths so
+   identical source scopes have the same identity across checkout locations. It then passes `ArtifactRoot`, the
+   strictly artifact-root-relative `SourceManifest`, and `SourceSha256` to the trusted
    `scripts\Invoke-SubstrateTdsPreflight.ps1` from the verifier project before launching this verifier or reading any
    command-bearing skill or instruction from the target workspace.
 2. The preflight confirms the workspace identity, requires `.git` and `.git\objects` to be local non-reparse
