@@ -37,6 +37,12 @@ agents owns it; see [the harness contract](#csharp-differential-harness).
 
 Produced upstream. Prose is not acceptable; the document is a list of features.
 
+This section defines the shared feature wire shape. The
+[requirements collector guide](requirements-collector.md#feature-document-shape)
+adds the author's field constraints, decimal example encoding, and the separate
+`document.context.json` readiness contract. Downstream coverage checks do not
+replace the collector's `validate --require-ready` gate.
+
 ```jsonc
 {
   "source": { "language": "csharp", "kind": "sdk", "root": "csharp/" },

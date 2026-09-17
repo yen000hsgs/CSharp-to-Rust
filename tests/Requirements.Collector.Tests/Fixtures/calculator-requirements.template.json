@@ -1,0 +1,264 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "calculator-fixture-binding-required",
+  "extractionId": "fixture-binding-required",
+  "status": "partial",
+  "requirements": [
+    {
+      "id": "CALC-SDK",
+      "feature": "Reusable calculator SDK",
+      "statement": "Provide the four synchronous arithmetic operations as a reusable library API that callers can invoke without constructing calculator state or starting a console process.",
+      "confidence": "confirmed",
+      "evidenceIds": [
+        "project:Calculator.csproj:T:CalculatorSample.Calculator",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"
+      ],
+      "inputs": ["Two required, non-nullable decimal value parameters per operation."],
+      "outputs": ["One decimal value returned synchronously when the operation succeeds."],
+      "preconditions": ["The caller references the library; no calculator instance is required."],
+      "postconditions": ["Control returns to the caller, or a documented arithmetic exception propagates."],
+      "sideEffects": [],
+      "errorBehavior": ["The library does not replace arithmetic failures with process termination."],
+      "acceptanceCriteria": [
+        "The C# reference assembly has no entry point, as asserted by CalculatorAssembly_IsAClassLibrary in samples\\Calculator.Tests\\CalculatorTests.cs:5-9.",
+        "A library consumer can invoke Add, Subtract, Multiply, and Divide with two decimal arguments and consume their returned values without constructing a Calculator object."
+      ],
+      "migrationNotes": [
+        "Compiler facts: DynamicallyLinkedLibrary, public static type, four public static non-async methods returning decimal. The type excerpt is a header only; all four member packets and samples\\Calculator\\Calculator.cs:1-20 were reviewed separately.",
+        "The test files cited in this artifact are supplemental evidence read and executed separately; they are not among the five symbols in this SDK-only extraction and are not assigned invented evidenceIds.",
+        "Scope is the supplied Debug, .NETCoreApp,Version=v8.0 snapshot, not unexamined conditional builds or a promise about Rust ABI compatibility.",
+        "NullableContext=Enable is not a runtime null guard. The parameters are decimal value types, not nullable decimal or reference types."
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "CALC-ADD",
+      "feature": "Addition",
+      "statement": "Add(left, right) returns the C# decimal sum of left and right, including negative, zero, and fractional values.",
+      "confidence": "confirmed",
+      "evidenceIds": ["project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)"],
+      "inputs": ["left: decimal", "right: decimal"],
+      "outputs": ["The decimal result of left + right."],
+      "preconditions": ["A successful call requires the result to be representable under C# decimal arithmetic."],
+      "postconditions": ["The return value equals the reference decimal addition result."],
+      "sideEffects": [],
+      "errorBehavior": ["Range overflow propagates as specified by CALC-OVERFLOW."],
+      "acceptanceCriteria": [
+        "Add(2m, 3m) returns 5m; Add(-2m, 3m) returns 1m; Add(0m, 3m) returns 3m.",
+        "Add(0.1m, 0.2m) returns exactly 0.3m under decimal equality."
+      ],
+      "migrationNotes": ["Verified declaration samples\\Calculator\\Calculator.cs:5 and tests Add_ReturnsSum / Add_PreservesDecimalPrecision in samples\\Calculator.Tests\\CalculatorTests.cs:11-18,47-51."],
+      "dependsOn": ["CALC-SDK", "CALC-DECIMAL"]
+    },
+    {
+      "id": "CALC-SUBTRACT",
+      "feature": "Subtraction",
+      "statement": "Subtract(left, right) returns the C# decimal difference left minus right without reversing the operands or truncating fractional results.",
+      "confidence": "confirmed",
+      "evidenceIds": ["project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)"],
+      "inputs": ["left: decimal", "right: decimal"],
+      "outputs": ["The decimal result of left - right."],
+      "preconditions": ["A successful call requires the result to be representable under C# decimal arithmetic."],
+      "postconditions": ["The sign and fractional value match reference decimal subtraction."],
+      "sideEffects": [],
+      "errorBehavior": ["Range overflow propagates as specified by CALC-OVERFLOW."],
+      "acceptanceCriteria": [
+        "Subtract(7m, 3m) returns 4m; Subtract(2m, 5m) returns -3m; Subtract(-2m, -3m) returns 1m.",
+        "Subtract(3.75m, 2.5m) returns 1.25m."
+      ],
+      "migrationNotes": ["Verified declaration samples\\Calculator\\Calculator.cs:7 and tests Subtract_ReturnsDifference / Subtract_SupportsFractions in samples\\Calculator.Tests\\CalculatorTests.cs:20-27,53-57."],
+      "dependsOn": ["CALC-SDK", "CALC-DECIMAL"]
+    },
+    {
+      "id": "CALC-MULTIPLY",
+      "feature": "Multiplication",
+      "statement": "Multiply(left, right) returns the C# decimal product, preserving the operation's sign, zero, and fractional behavior.",
+      "confidence": "confirmed",
+      "evidenceIds": ["project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)"],
+      "inputs": ["left: decimal", "right: decimal"],
+      "outputs": ["The decimal result of left * right."],
+      "preconditions": ["A successful call requires the result to be representable under C# decimal arithmetic."],
+      "postconditions": ["The return value equals reference decimal multiplication."],
+      "sideEffects": [],
+      "errorBehavior": ["Range overflow propagates as specified by CALC-OVERFLOW; silent wrapping is not permitted."],
+      "acceptanceCriteria": [
+        "Multiply(4m, 3m) returns 12m; Multiply(-4m, 3m) returns -12m; Multiply(0m, 3m) returns 0m.",
+        "Multiply(1.25m, 2.5m) returns 3.125m."
+      ],
+      "migrationNotes": ["Verified declaration samples\\Calculator\\Calculator.cs:9 and tests Multiply_ReturnsProduct / Multiply_SupportsFractions in samples\\Calculator.Tests\\CalculatorTests.cs:29-36,59-63."],
+      "dependsOn": ["CALC-SDK", "CALC-DECIMAL"]
+    },
+    {
+      "id": "CALC-DIVIDE",
+      "feature": "Division",
+      "statement": "For a nonzero divisor, Divide(dividend, divisor) returns the C# decimal quotient rather than an integer-truncated result.",
+      "confidence": "confirmed",
+      "evidenceIds": ["project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"],
+      "inputs": ["dividend: decimal", "divisor: nonzero decimal for the successful path"],
+      "outputs": ["The decimal result of dividend / divisor."],
+      "preconditions": ["divisor != 0m and the result is representable under C# decimal arithmetic."],
+      "postconditions": ["The result has the sign and fractional value of reference decimal division."],
+      "sideEffects": [],
+      "errorBehavior": ["Zero divisors follow CALC-DIVIDE-ZERO; nonzero-divisor overflow follows CALC-OVERFLOW."],
+      "acceptanceCriteria": [
+        "Divide(8m, 2m) returns 4m; Divide(8m, -2m) returns -4m; Divide(0m, 2m) returns 0m.",
+        "Divide(5m, 2m) returns 2.5m rather than 2m."
+      ],
+      "migrationNotes": ["Verified full declaration samples\\Calculator\\Calculator.cs:11-19 and tests Divide_ReturnsQuotient / Divide_DoesNotTruncateFractions in samples\\Calculator.Tests\\CalculatorTests.cs:38-45,65-69."],
+      "dependsOn": ["CALC-SDK", "CALC-DECIMAL", "CALC-DIVIDE-ZERO"]
+    },
+    {
+      "id": "CALC-DIVIDE-ZERO",
+      "feature": "Division error contract",
+      "statement": "When divisor equals decimal zero, Divide throws DivideByZeroException with the message 'Cannot divide by zero.' before attempting the division.",
+      "confidence": "confirmed",
+      "evidenceIds": ["project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"],
+      "inputs": ["Any decimal dividend", "divisor == 0m"],
+      "outputs": [],
+      "preconditions": ["The divisor compares equal to decimal zero."],
+      "postconditions": ["No quotient is returned; the exception reaches the caller."],
+      "sideEffects": [],
+      "errorBehavior": ["Throw System.DivideByZeroException with exactly 'Cannot divide by zero.' as its message, including the period."],
+      "acceptanceCriteria": [
+        "Divide(5m, 0m), Divide(0m, 0m), and Divide(-5m, 0m) each throw DivideByZeroException with message 'Cannot divide by zero.'.",
+        "Do not return zero, NaN, infinity, or an optional missing value instead of the specified error."
+      ],
+      "migrationNotes": [
+        "Verified explicit guard/throw at samples\\Calculator\\Calculator.cs:13-16 and Divide_ByZero_Throws at samples\\Calculator.Tests\\CalculatorTests.cs:71-81.",
+        "The external exception constructor/type relationship IDs are not extracted symbols and are deliberately not used as evidenceIds.",
+        "A Rust Result representation is a design option, not proof that exception type, message, propagation, or call-boundary semantics are preserved."
+      ],
+      "dependsOn": ["CALC-SDK"]
+    },
+    {
+      "id": "CALC-OVERFLOW",
+      "feature": "Decimal range errors",
+      "statement": "Arithmetic that exceeds the representable C# decimal range propagates OverflowException to the caller rather than silently wrapping, saturating, or returning a placeholder value.",
+      "confidence": "inferred",
+      "evidenceIds": [
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"
+      ],
+      "inputs": ["Decimal operands whose reference arithmetic operation overflows."],
+      "outputs": [],
+      "preconditions": ["For Divide, the divisor is nonzero; zero follows the explicit guard contract instead."],
+      "postconditions": ["No numeric result is returned for the overflow cases."],
+      "sideEffects": [],
+      "errorBehavior": ["System.OverflowException propagates synchronously to the library caller."],
+      "acceptanceCriteria": [
+        "Add(decimal.MaxValue, 1m) throws OverflowException.",
+        "Subtract(decimal.MinValue, 1m) throws OverflowException.",
+        "Multiply(decimal.MaxValue, 2m) throws OverflowException.",
+        "Divide(decimal.MaxValue, 0.1m) throws OverflowException."
+      ],
+      "migrationNotes": [
+        "Compiler fact checkOverflow=false does not disable decimal operator overflow exceptions. Extracted throws relationships describe explicit syntax, not all runtime failures.",
+        "Overflow is inferred runtime behavior of the decimal operators, corroborated by separately executed supplemental tests; it is not promoted to an observed or confirmed compiler throw fact.",
+        "Verified decimal operators at samples\\Calculator\\Calculator.cs:5,7,9,18 and four BeyondDecimalRange_Throws tests in samples\\Calculator.Tests\\CalculatorTests.cs:83-105.",
+        "No constant overflow exception message is asserted by the source or tests; do not invent one or conflate it with the explicit division-by-zero message."
+      ],
+      "dependsOn": ["CALC-SDK", "CALC-DECIMAL"]
+    },
+    {
+      "id": "CALC-DECIMAL",
+      "feature": "Decimal numeric semantics",
+      "statement": "Preserve .NET 8 decimal arithmetic precision, range, and rounding semantics for the four operations instead of substituting unverified binary floating-point or integer behavior.",
+      "confidence": "inferred",
+      "evidenceIds": [
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"
+      ],
+      "inputs": ["Values in the .NET 8 decimal operand domain."],
+      "outputs": ["A decimal-compatible numeric result on the successful path."],
+      "preconditions": ["The matching reference decimal operator succeeds."],
+      "postconditions": ["The numeric result matches the .NET 8 reference operation, including its applicable precision and rounding behavior."],
+      "sideEffects": [],
+      "errorBehavior": ["Preserve the separately stated zero-division and overflow behavior."],
+      "acceptanceCriteria": [
+        "Preserve exact results for the baseline decimal cases: 0.1m + 0.2m = 0.3m, 3.75m - 2.5m = 1.25m, 1.25m * 2.5m = 3.125m, and 5m / 2m = 2.5m.",
+        "Before migration completion, characterize inexact quotient and tiny-result boundary cases against the .NET 8 reference implementation rather than assuming a Rust decimal or floating-point type is equivalent."
+      ],
+      "migrationNotes": [
+        "Evidence establishes direct decimal operators without custom rounding logic. General precision/rounding preservation is an interpretation of those operators; the supplied tests cover exact fractions and overflow, not an exhaustive decimal domain.",
+        "Q-DECIMAL-BOUNDARIES retains the missing boundary/representation acceptance decision; the requirements artifact intentionally remains partial.",
+        "A migration signal is an investigation prompt, not a verified Rust type selection or semantic parity result."
+      ],
+      "dependsOn": ["CALC-SDK"]
+    },
+    {
+      "id": "CALC-CALLER-CONTROL",
+      "feature": "Caller-owned execution and state",
+      "statement": "Arithmetic calls must not perform calculator-managed console or file I/O, mutate shared calculator state, or terminate the calling process; they return a value or propagate the stated errors.",
+      "confidence": "inferred",
+      "evidenceIds": [
+        "project:Calculator.csproj:T:CalculatorSample.Calculator",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"
+      ],
+      "inputs": ["Valid decimal inputs or documented error cases."],
+      "outputs": ["The operation's result or propagated error."],
+      "preconditions": [],
+      "postconditions": ["The caller remains responsible for rendering results, logging errors, and controlling process lifetime."],
+      "sideEffects": ["No calculator-managed I/O or shared mutable calculator state is introduced."],
+      "errorBehavior": ["The caller can catch arithmetic errors and continue issuing subsequent arithmetic calls."],
+      "acceptanceCriteria": [
+        "A caller that catches DivideByZeroException from Divide(1m, 0m) can subsequently obtain 5m from Add(2m, 3m).",
+        "Calling the arithmetic API does not print results or errors or write files as part of calculator behavior."
+      ],
+      "migrationNotes": [
+        "Inferred from the reviewed complete samples\\Calculator\\Calculator.cs:1-20: bodies contain only decimal operations, the zero guard, and exception construction; no mutable fields, I/O, catches, finally blocks, awaits, or process-exit calls are present.",
+        "No C# catch/filter/rethrow/finally/async behavior is invented for this sample. Rust Drop is not needed to explain these bodies, and its general equivalence to finally is not assumed.",
+        "The supplied arithmetic tests exercise caller-observed return values and exceptions but do not separately instrument all possible I/O or shared-state effects."
+      ],
+      "dependsOn": ["CALC-SDK"]
+    }
+  ],
+  "coverage": [
+    {
+      "symbolId": "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+      "disposition": "required",
+      "reason": "CALC-ADD specifies normal results; CALC-DECIMAL and CALC-OVERFLOW cover numeric semantics and implicit runtime errors."
+    },
+    {
+      "symbolId": "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)",
+      "disposition": "required",
+      "reason": "CALC-DIVIDE, CALC-DIVIDE-ZERO, CALC-OVERFLOW, and CALC-DECIMAL distinguish successful division, the explicit guard, and implicit decimal failures."
+    },
+    {
+      "symbolId": "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+      "disposition": "required",
+      "reason": "CALC-MULTIPLY specifies normal results; CALC-DECIMAL and CALC-OVERFLOW cover numeric semantics and implicit runtime errors."
+    },
+    {
+      "symbolId": "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+      "disposition": "required",
+      "reason": "CALC-SUBTRACT specifies operand order and results; CALC-DECIMAL and CALC-OVERFLOW cover numeric semantics and implicit runtime errors."
+    },
+    {
+      "symbolId": "project:Calculator.csproj:T:CalculatorSample.Calculator",
+      "disposition": "required",
+      "reason": "CALC-SDK and CALC-CALLER-CONTROL capture the reusable static library surface and reviewed caller-owned execution model."
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "Q-DECIMAL-BOUNDARIES",
+      "question": "Through the orchestrator, establish additional migration acceptance cases for inexact division, tiny-result rounding/underflow, and decimal scale/trailing-zero representation. The supplied 24-test baseline covers exact fractions and overflow but does not settle these boundary/representation cases; no target numeric type or parity claim should be approved from those tests alone.",
+      "evidenceIds": [
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Add(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Subtract(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Multiply(System.Decimal,System.Decimal)",
+        "project:Calculator.csproj:M:CalculatorSample.Calculator.Divide(System.Decimal,System.Decimal)"
+      ]
+    }
+  ]
+}
