@@ -1,3 +1,8 @@
+#requires -Version 7
+# Uses [System.IO.Path]::GetRelativePath, which is absent in Windows PowerShell 5.1.
+# Run with pwsh; under powershell.exe this fails with a MethodNotFound error that
+# gives no hint the shell is the cause.
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]

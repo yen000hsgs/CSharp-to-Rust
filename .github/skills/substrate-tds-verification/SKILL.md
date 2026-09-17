@@ -27,6 +27,9 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 
 ## Procedure
 
+Run both scripts with `pwsh` (PowerShell 7 or later). They declare `#requires -Version 7` and
+refuse to run under Windows PowerShell 5.1, which lacks `[System.IO.Path]::GetRelativePath`.
+
 1. The Orchestrator first runs `scripts\New-VerificationSourceManifest.ps1`, validates its canonical exact-set output,
    which excludes repository metadata plus standard .NET `bin`/`obj` and Cargo `target` directories only when project
    markers identify the directory as a direct generated-output child, while preserving nested source layouts such as
