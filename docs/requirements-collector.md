@@ -22,7 +22,7 @@ the companion links features to canonical compiler symbols and to the original
 evidence. Later agents can retrieve that evidence without loading all of it
 into every prompt.
 
-The feature document intentionally has the `source`/`features` shape in PR #2,
+The feature document intentionally has the downstream `source`/`features` shape,
 not the old collector's flat `requirements` shape. It has no metadata envelope
 or embedded extraction report. Version `2.0` belongs to its companion; canonical
 compiler extraction and historical requirements schema `1.0` are unchanged.
@@ -220,12 +220,13 @@ the document to create tests, manifest and differential cases. Code consumes
 the same document plus that generated suite and manifest. The verifier uses
 the same requirement IDs and independent original evidence.
 
-PR #2's feature shape is compatible with the document, but its profiles/gates
-do not automatically enforce this new context's readiness. The orchestrator
-must enforce the collector gate; PR coverage success is not a substitute.
-There is no orchestrator implementation in this repository yet. Fixing the PR's
-coverage/parity defects and supplying its C# reference harness are separate
-work. No real downstream-agent execution is implied by schema compatibility.
+The downstream feature shape in [the pipeline contracts](contracts.md) is
+compatible with the document, but the downstream profiles/gates do not
+automatically enforce this context's readiness. The orchestrator must enforce
+the collector gate; coverage success is not a substitute. There is no
+orchestrator implementation in this repository yet. Supplying the C# reference
+harness and establishing runtime parity are separate work. No real
+downstream-agent execution is implied by schema compatibility.
 
 ## Historical schema 1.0
 

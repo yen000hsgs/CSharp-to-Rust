@@ -1,6 +1,19 @@
+# .NET
 **/bin/
 **/obj/
 **/TestResults/
-.vs/
-.worktrees/
+
+# Rust
+target/
+**/Cargo.lock
+
+# Pipeline run artifacts
 artifacts/
+.worktrees/
+
+# Editors / OS
+.vs/
+.idea/
+*.user
+Thumbs.db
+.DS_Store
