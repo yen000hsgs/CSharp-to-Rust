@@ -681,6 +681,51 @@ let the next agent rule on the conflict from the evidence instead of repeating
 the investigation, and `tools/Check-ParityReport.ps1` rejects a parity report
 that leaves any entry unruled.
 
+## `reports/run-report.json` — Migration orchestrator output
+
+Written by `migration-orchestrator` once per run. Every other report describes
+one stage; this one describes the run, and it is the artifact a human reads to
+decide whether the migration is trustworthy.
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "run_id": "migration-001",
+  "task_id": "task-42",
+  "extraction_id": "12d809cc...",
+  "verdict": "blocked",                // pass | pass_with_warnings | partial | fail | blocked
+  "rounds_used": 2,
+  "iteration_budget": 3,
+  "stages": [
+    { "stage": "gentest",
+      "agent": "GenTest",
+      "status": "pass",                // pass | partial | fail | blocked | not-run
+      "reported": { "covered": 47, "total": 47 },   // what the agent claimed
+      "measured": { "covered": 47, "total": 47 },   // what the orchestrator's gate found
+      "gate": "Check-Coverage.ps1",
+      "gate_exit": 0 }
+  ],
+  "coverage_level": "substantive",     // strongest level actually established
+  "limitations": [
+    "No C# differential runner supplied; parity differential skipped.",
+    "Verifier subgroup returned blocked; adapter validation is unimplemented."
+  ],
+  "blockers": [],
+  "paths": { "document": "document.json", "manifest": "tests/manifest.json" }
+}
+```
+
+`reported` and `measured` are separate fields on purpose. Agents self-report and
+self-reports inflate, so the orchestrator re-runs each deterministic gate and
+records both numbers. When they disagree the gate is authoritative and the
+divergence is itself a finding about that agent.
+
+`limitations` lists every check that did **not** execute. A run whose
+differential was skipped, whose end-to-end was `not-run`, or whose verifier
+subgroup was never invoked cannot report a bare `pass`, because the word would
+not distinguish "verified" from "never checked". That distinction is the whole
+purpose of this file.
+
 ## Coverage gate
 
 `tools/Check-Coverage.ps1` is the only real guarantee that the generated tests
