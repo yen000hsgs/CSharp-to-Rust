@@ -12,6 +12,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\src\Pipeline.Contracts\Pipeline.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\Requirements.Collector\Requirements.Collector.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Requirements.Collector\Requirements.Collector.csproj" />
   </ItemGroup>
 </Project>

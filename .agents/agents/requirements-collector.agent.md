@@ -112,6 +112,10 @@ decisions rather than repeating the report.
 
 `requestStatus` is `completed`, `blocked`, or `failed`; a completed collection
 request may produce a partial artifact. Missing artifacts have null paths.
+When distribution is requested, forward the original document/context and
+compiler-artifact paths through the orchestrator to `code-distributor`.
+The distributor packages existing features; it must not redefine requirements
+or their IDs. It can plan partial input but cannot make that input ready.
 The orchestrator must check context/readiness before passing the document to
 GenTest; Code additionally needs the generated suite and manifest. Original
 source/tests remain separately available for independent review. A downstream

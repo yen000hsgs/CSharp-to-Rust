@@ -20,7 +20,9 @@ Ownership is narrow on purpose:
 
 | Path | Written by | Read-only to |
 | --- | --- | --- |
-| `document.json` | requirements agent (upstream) | all three agents |
+| `document.json` | requirements collector | distributor, GenTest, Code, parity verifier |
+| `document.context.json` | requirements collector | distributor, orchestrator |
+| `distribution.json` | code distributor | orchestrator; downstream consumers when supplied |
 | `csharp/` | upstream | all three agents |
 | `tests/manifest.json`, all test sources, `tests/golden/cases.json` | GenTest | code agent, parity verifier |
 | `rust/` (the crate) | code agent | GenTest, parity verifier |
@@ -95,6 +97,20 @@ conventions, scoped under the owning feature id:
 The set of all such ids is the **requirement set**. Coverage is defined as a set
 relation against it, not as a judgment.
 
+## `distribution.json` - feature work packages
+
+The [code distributor contract](code-distributor.md#distributionjson) defines
+the plan over the existing feature document. Packages select whole
+`feature.id` values and preserve every associated atomic requirement.
+They do not replace `document.json` or create new downstream requirement IDs.
+
+The orchestrator validates the plan and its original inputs with
+`validate-distribution --require-ready` before using a package's `featureIds`
+as GenTest/Code's existing `focus`. Dependencies and shared concerns guide
+coordination; they do not prove concurrent writes to the single crate or
+manifests are safe. Draft/partial plans and partial upstream evidence cannot
+be dispatched as complete.
+
 ## Run layout
 
 Every artifact for one migration attempt lives under a single run directory.
@@ -104,6 +120,8 @@ holding `Cargo.toml`. Cargo will not discover a test that lives outside it.
 ```
 artifacts/<run>/
   document.json            # requirements agent output
+  document.context.json    # collector readiness and evidence association
+  distribution.json        # distributor work packages, when this stage is used
   tests/
     manifest.json          # GenTest output -- metadata only, no Rust sources
   rust/                    # <- the crate root; cargo is invoked here

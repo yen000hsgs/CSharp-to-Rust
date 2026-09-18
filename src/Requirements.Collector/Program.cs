@@ -13,6 +13,8 @@ internal static class CollectorCommand
           prepare --input <extraction.json> --output <document.json> --context <document.context.json>
           validate --input <extraction.json> --document <document.json> --context <document.context.json> [--require-ready]
           render --input <extraction.json> --document <document.json> --context <document.context.json> --output <requirements.md>
+          prepare-distribution --input <extraction.json> --document <document.json> --context <document.context.json> --output <distribution.json>
+          validate-distribution --input <extraction.json> --document <document.json> --context <document.context.json> --distribution <distribution.json> [--require-ready]
           inspect --input <extraction.json> --symbol <exact-id> [--offset <n>] [--max-chars <1..8192>]
           prepare-legacy --input <extraction.json> --output <draft.json> [--force]
           validate-legacy --input <extraction.json> --requirements <requirements.json>
@@ -20,6 +22,7 @@ internal static class CollectorCommand
         render creates a new deterministic Markdown view; legacy commands retain schema 1.0.
         inspect returns bounded snapshot evidence; it does not read live source.
         validate checks structure and traceability only, never semantic parity.
+        prepare-distribution creates a new unassigned draft; validate-distribution checks whole-feature planning and input bindings.
         Exit 0: successful operation (possibly draft/partial); exit 2: invalid input, usage, or I/O.
         """;
 
@@ -39,6 +42,8 @@ internal static class CollectorCommand
                 "prepare" => ["--input", "--output", "--context"],
                 "validate" => ["--input", "--document", "--context", "--require-ready"],
                 "render" => ["--input", "--document", "--context", "--output"],
+                "prepare-distribution" => ["--input", "--document", "--context", "--output"],
+                "validate-distribution" => ["--input", "--document", "--context", "--distribution", "--require-ready"],
                 "prepare-legacy" => ["--input", "--output", "--force"],
                 "inspect" => ["--input", "--symbol", "--offset", "--max-chars"],
                 "validate-legacy" => ["--input", "--requirements"],
@@ -52,6 +57,14 @@ internal static class CollectorCommand
             {
                 case "prepare":
                     DocumentPipeline.Prepare(input, Required(options, "--output"), Required(options, "--context"), extraction, symbols);
+                    break;
+                case "prepare-distribution":
+                    DistributionPipeline.Prepare(input, Required(options, "--document"), Required(options, "--context"),
+                        Required(options, "--output"), extraction, symbols);
+                    break;
+                case "validate-distribution":
+                    DistributionPipeline.Validate(input, Required(options, "--document"), Required(options, "--context"),
+                        Required(options, "--distribution"), extraction, symbols, options.ContainsKey("--require-ready"));
                     break;
                 case "validate":
                 case "render":
