@@ -43,6 +43,7 @@ You are invoked with a run request supplying:
 | `run_id` | **yes** | Identifier for this run. Names the run directory and appears in every report. |
 | `task_id` | **yes** | Task association carried unchanged through every stage. |
 | `csharp_source_root` | **yes** | The original SDK. Read-only to every agent including you. |
+| `execution_approved` | no | Operator approval to build the SDK during extraction. Default **false**. See stage 1. |
 | `run_root` | no | Run directory. Defaults to `artifacts/<run_id>/`. |
 | `csharp_differential_runner` | no | Command implementing the C# side of the differential. See below. |
 | `iteration_budget` | no | Max repair rounds. Default **3**. |
@@ -128,10 +129,12 @@ Invoke `csharp-extractor` with **all four** of its required inputs — `projectP
 
 `executionApproved` defaults to **`false`**, and the extractor's contract is that
 absent approval is `blocked`, not a quiet fall back to source-only extraction. So
-a run that omits it blocks at stage 1 having done nothing. Pass it as `true` only
-when the operator has approved building the SDK; otherwise stop and report that
-extraction needs execution approval. Never set it to `true` on your own authority
-— it authorises running the target project's build.
+a run that omits it blocks at stage 1 having done nothing. Set it from the
+`execution_approved` run input — that input **is** the operator's approval, and it
+is the only thing that may authorise it. Never set it to `true` on your own
+authority, and never infer approval from the fact that a run was requested: it
+authorises running the target project's build. If `execution_approved` is absent
+or false, stop and report that extraction needs execution approval.
 
 Keep `reportPath` **and** `compilerArtifactPath`; the collector needs both, and
 the report alone is a narrative, not a compiler artifact.

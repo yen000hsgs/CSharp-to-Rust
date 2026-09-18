@@ -25,6 +25,7 @@ in `.github/agents/`.
 
 | Agent | In | Out | Owner |
 | --- | --- | --- | --- |
+| `migration-orchestrator` | run request (`run_id`, `task_id`, `csharp_source_root`) | run-report.json and a single run verdict | hoangnguyen@ |
 | `csharp-extractor` | C# project, solution, or SDK | compiler JSON and source-backed Markdown report | - |
 | `requirements-collector` | extractor report and compiler JSON | document.json, document.context.json, optional rendered Markdown | - |
 | `code-distributor` | requirements document, context, compiler JSON | distribution.json with feature work packages and dependencies | - |
@@ -39,6 +40,45 @@ rest of the team.
 output paths, and decides how each result is used. These agents do their
 job and hand back a structured summary — they never invoke each other and never
 decide what runs next.
+
+## Run a migration
+
+From the repository root:
+
+```powershell
+agency copilot --agent migration-orchestrator --source repo `
+  --input run_id=migration-001 `
+  --input task_id=task-42 `
+  --input csharp_source_root=Q:\src\MyProject `
+  --input execution_approved=true `
+  --add-dir Q:\src\MyProject `
+  --prompt "Run the full migration and return the run verdict." `
+  --allow-all-tools
+```
+
+`run_id`, `task_id` and `csharp_source_root` are mandatory. The orchestrator
+will not guess a project: omit either of the last two and it stops.
+
+`--add-dir` the C# source, since it lives outside the repository and is
+read-only to every agent including the orchestrator.
+
+`--allow-all-tools` is required because the orchestrator re-runs the gates
+itself — `dotnet`, `cargo` and the scripts in `tools/`. The verifier subgroup's
+narrower `--allow-tool=agent,read,search` is not sufficient here.
+
+`execution_approved=true` authorises **building the target C# project** during
+extraction. It defaults to false and stage 1 blocks without it, deliberately:
+extraction runs the project's own build, so it is opt-in rather than implied by
+requesting a run. Omit it if you have not approved that.
+
+Stages 1-5 run with the above. **Stage 6 (the verifier subgroup) additionally
+needs `tds_machine`, `attestation_key_path` and `attestation_key_id`**; without
+them stage 6 records `blocked` / `missing-verification-inputs` and the rest of
+the run still completes. Note that stage 6 currently returns `blocked` on any
+host — see [Known limitations](#known-limitations).
+
+Everything lands in `artifacts/<run_id>/`, with the verdict in
+`artifacts/<run_id>/reports/run-report.json`.
 
 ## Extraction, requirements, and distribution agents
 
@@ -218,6 +258,15 @@ thing it exists to prevent:
 - **The gates check test *substance*, not test *correctness*.** A test can assert
   something real and still assert the wrong thing; that is what the differential
   pass and human review are for.
+- **Stage 6 cannot currently return a ready receipt on any host.** Three
+  validation flags in `scripts/Invoke-SubstrateTdsPreflight.ps1` —
+  `controlPlaneProvenanceValidationImplemented`,
+  `csharpBaselineGraphValidationImplemented` and
+  `privilegedExecutorValidationImplemented` — are hardcoded `$false`, and the
+  last forces `adapterReady = $false`. A correctly parameterised run on a fully
+  provisioned machine still returns `verdict: blocked` and exit 3. That is an
+  unimplemented adapter validation, not a defect in the generated Rust or in the
+  invocation, and the orchestrator records it as such.
 
 ## Inputs
 
