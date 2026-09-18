@@ -13,7 +13,7 @@ internal static class DocumentPipeline
         {
             Source = new()
             {
-                Root = SafeOutput.SourceRoot(input, extraction),
+                Root = SafeOutput.PortablePath(SafeOutput.SourceRoot(input, extraction), output),
                 Kind = Path.GetExtension(extraction.InputPath).ToLowerInvariant() is ".sln" or ".slnx"
                     ? "solution"
                     : extraction.Projects.Any(project => project.OutputKind is "ConsoleApplication" or "WindowsApplication")
@@ -25,8 +25,8 @@ internal static class DocumentPipeline
             TaskId = extraction.TaskId,
             ExtractionId = extraction.ExtractionId,
             UpstreamStatus = extraction.Status,
-            DocumentPath = Path.GetFullPath(output),
-            EvidenceReferences = [Path.GetFullPath(input)],
+            DocumentPath = SafeOutput.PortablePath(output, contextPath),
+            EvidenceReferences = [SafeOutput.PortablePath(input, contextPath)],
             Coverage = symbols.Values.Where(symbol => symbol.IsPublicApi).OrderBy(symbol => symbol.Id, StringComparer.Ordinal)
                 .Select(symbol => new CoverageDecision(symbol.Id, "pending",
                     "Agent review required: author testable behavior from source, compiler evidence, and relevant tests, or justify exclusion.")).ToList(),

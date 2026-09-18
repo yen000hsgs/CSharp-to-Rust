@@ -49,8 +49,10 @@ public sealed class DistributionCliTests : IDisposable
         }, plan.AsObject().Select(property => property.Key));
         Assert.Equal("1.0", plan["schemaVersion"]!.GetValue<string>());
         Assert.Equal("draft", plan["status"]!.GetValue<string>());
-        Assert.Equal(document, plan["documentPath"]!.GetValue<string>());
-        Assert.Equal(context, plan["contextPath"]!.GetValue<string>());
+        Assert.Equal(Path.GetFileName(document), plan["documentPath"]!.GetValue<string>());
+        Assert.Equal(Path.GetFileName(context), plan["contextPath"]!.GetValue<string>());
+        Assert.Equal(document, Path.GetFullPath(plan["documentPath"]!.GetValue<string>(), Path.GetDirectoryName(distribution)!));
+        Assert.Equal(context, Path.GetFullPath(plan["contextPath"]!.GetValue<string>(), Path.GetDirectoryName(distribution)!));
         Assert.Equal(Hash(document), plan["documentSha256"]!.GetValue<string>());
         Assert.Equal(Hash(context), plan["contextSha256"]!.GetValue<string>());
         Assert.Empty(plan["packages"]!.AsArray());

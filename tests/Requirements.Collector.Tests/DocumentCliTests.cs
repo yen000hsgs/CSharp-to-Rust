@@ -38,11 +38,13 @@ public sealed class DocumentCliTests : IDisposable
         Assert.Empty(draft["features"]!.AsArray());
         Assert.Equal("csharp", draft["source"]!["language"]!.GetValue<string>());
         Assert.Equal("library", draft["source"]!["kind"]!.GetValue<string>());
-        Assert.Equal(directory, draft["source"]!["root"]!.GetValue<string>());
+        Assert.Equal(".", draft["source"]!["root"]!.GetValue<string>());
+        Assert.Equal(directory, Path.GetFullPath(draft["source"]!["root"]!.GetValue<string>(), Path.GetDirectoryName(document)!));
         var metadata = Read(context);
         Assert.Equal("2.0", metadata["schemaVersion"]!.GetValue<string>());
         Assert.Equal("draft", metadata["status"]!.GetValue<string>());
-        Assert.Equal(document, metadata["documentPath"]!.GetValue<string>());
+        Assert.Equal(Path.GetFileName(document), metadata["documentPath"]!.GetValue<string>());
+        Assert.Equal(document, Path.GetFullPath(metadata["documentPath"]!.GetValue<string>(), Path.GetDirectoryName(context)!));
         Assert.Equal("pending", Assert.Single(metadata["coverage"]!.AsArray())!["disposition"]!.GetValue<string>());
         Assert.NotEmpty(metadata["openQuestions"]!.AsArray());
         Assert.Empty(metadata["featureEvidence"]!.AsArray());
@@ -627,11 +629,13 @@ public sealed class DocumentCliTests : IDisposable
     public void TransportingTheSameSnapshotHonorsTheStoredDocumentBinding(bool relativeDocumentPath)
     {
         Success(Run("prepare", "--input", input, "--output", document, "--context", context));
-        if (relativeDocumentPath)
+        if (!relativeDocumentPath)
         {
+            // prepare now emits portable relative bindings, so pin absolute ones here to keep the
+            // guard covered: a hand-authored absolute binding must still refuse to transport.
             var metadata = Read(context);
-            metadata["documentPath"] = "document.json";
-            metadata["evidenceReferences"] = new JsonArray("extraction.json");
+            metadata["documentPath"] = Path.GetFullPath(document);
+            metadata["evidenceReferences"] = new JsonArray(Path.GetFullPath(input));
             Save(context, metadata);
         }
         Success(Validate());
@@ -1016,7 +1020,8 @@ public sealed class DocumentCliTests : IDisposable
     private ExtractionArtifact Extraction() => new()
     {
         TaskId = "synthetic-test", ExtractionId = "fixture-only-1",
-        RootDirectory = directory, InputPath = "Odd.csproj", Status = "complete",
+        // Relative, matching what the extractor now writes; resolved against the extraction file's directory.
+        RootDirectory = ".", InputPath = "Odd.csproj", Status = "complete",
         Projects =
         [
             new()
