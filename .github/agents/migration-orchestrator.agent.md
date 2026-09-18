@@ -44,11 +44,14 @@ You are invoked with a run request supplying:
 | `task_id` | **yes** | Task association carried unchanged through every stage. |
 | `csharp_source_root` | **yes** | The original SDK. Read-only to every agent including you. |
 | `execution_approved` | no | Operator approval to build the SDK during extraction. Default **false**. See stage 1. |
+| `porting_guide` | no | Operator-approved Rust mapping decisions, as `path`, `revision`, `approved`. Without it a document with open mapping decisions can never reach ready. See stage 2. |
 | `run_root` | no | Run directory. Defaults to `artifacts/<run_id>/`. |
 | `csharp_differential_runner` | no | Command implementing the C# side of the differential. See below. |
 | `iteration_budget` | no | Max repair rounds. Default **3**. |
 | `restart_budget` | no | Max stage-2 restarts. Default **1**. |
 | `tds_machine` | stage 6 | Explicit TDS machine. Never `auto` or `*`. |
+| `verification_workspace_root` | stage 6 | Absolute path to the provisioned Substrate checkout. Not this repository. |
+| `verification_code` | stage 6 | Canonical workspace-relative code scope inside that checkout. |
 | `attestation_key_path` | stage 6 | Preflight attestation key. Operator-supplied; not in the repo. |
 | `attestation_key_id` | stage 6 | Key id, e.g. `orchestrator-tds-preflight-v1`. |
 
@@ -61,7 +64,7 @@ Two inputs are **not** supported and must be rejected rather than honoured:
 
 If either is supplied, stop and say it is unsupported. Do not approximate it.
 
-The last three are required **only** to run stage 6. Without them stages 1–5 run
+The last five are required **only** to run stage 6. Without them stages 1–5 run
 normally and stage 6 records `blocked` / `missing-verification-inputs`. They are
 never guessed and never discovered by searching the filesystem.
 
@@ -87,16 +90,28 @@ One run, one directory, per `docs/contracts.md`:
 ```
 artifacts/<run_id>/
   extraction/     compiler JSON + extractor report
-  document.json   document.context.json
+  document.json   document.context.json   <- <generation>, first pass
   tests/          manifest.json  golden/cases.json
   rust/           <- crate root; cargo runs HERE
   reports/        coverage.json test-quality.json parity-report.json
                   code-report.json run-report.json
 ```
 
+The first collection writes the canonical run-root paths above. Because the
+collector refuses to overwrite an existing output, a stage-2 restart writes a new
+generation under `collect/gen2/`, `collect/gen3/`, and so on. `<generation>` in
+this prompt means whichever of these is current — the run root on the first pass,
+the newest `collect/genN/` after a restart.
+
 Create the directories before the first stage. Pass **concrete, absolute** paths
 to every agent; never let one fall back to a default, because a default resolved
 against a different working directory silently produces a second run.
+
+**One exception:** `verifier-orchestrator` takes `Request` as a
+**repository-relative** path and rejects an external or rooted one
+(`verifier-orchestrator.agent.md`, Input). Pass that single value relative to the
+repository root. The absolute-path rule governs every other agent and every other
+field; do not generalise the exception.
 
 `<run>` in every command below means `run_root` — default `artifacts/<run_id>/`.
 Resolve it **once**, at the start, and use that one resolved value everywhere
@@ -139,22 +154,38 @@ or false, stop and report that extraction needs execution approval.
 Keep `reportPath` **and** `compilerArtifactPath`; the collector needs both, and
 the report alone is a narrative, not a compiler artifact.
 
+If `porting_guide` is supplied, pass it through as the extractor's optional
+`portingGuide` (`path`, `revision`, `approved`) unchanged. You do not author it
+and you do not approve it — an `approved: false` guide is the operator declining,
+not an invitation to flip the flag.
+
 Record `extractionId`. It binds every later stage.
 
 ### 2 — collect
 
 Invoke `requirements-collector` with `extractionPath` = the extractor's report,
-the separate `compilerArtifactPath`, the same `task_id`, and
-`expectedExtractionId` = the recorded `extractionId`. Never let the collector
+the separate `compilerArtifactPath`, the same `task_id`,
+`expectedExtractionId` = the recorded `extractionId`, and the same
+`portingGuide` you passed to stage 1, if any. Never let the collector
 rebind an identity.
+
+Supply the output paths explicitly. `outputPath` is **required** — omit it and
+the collector writes nothing, after which the readiness check below reads a
+`document.json` that was never created and the run fails on a missing file
+rather than on its actual state. Pass `outputPath` = `<generation>/document.json`
+and an explicit `contextPath` = `<generation>/document.context.json`, where
+`<generation>` is the run root on the first pass and a fresh `collect/genN/`
+after a restart, as defined in **Run layout**. Carry those two resolved paths
+forward: every later stage's `document.json` means this generation's, not a path
+assembled from `<run>` by convention.
 
 Then gate readiness with the collector itself, not by eye:
 
 ```powershell
 dotnet run --project src/Requirements.Collector -- validate `
     --input <run>/extraction/extraction.json `
-    --document <run>/document.json `
-    --context <run>/document.context.json `
+    --document <generation>/document.json `
+    --context <generation>/document.context.json `
     --require-ready
 ```
 
@@ -168,6 +199,15 @@ A non-ready document stops the run. The document is the spec every later stage i
 verified against, so shipping a partial one guarantees a partial migration that
 measures as complete. Report the open questions and stop.
 
+Read the open questions before you restart. Where they are **mapping decisions**
+— which Rust type represents a C# one, `Result` versus panic, whether formatting
+is contractual, what shape the public surface takes — no amount of re-extraction
+resolves them, because they are not questions about the C# source. They are
+answered only by an approved `porting_guide`. Re-running stage 1 against the same
+source burns the restart budget and returns the same questions. Stop and ask the
+operator for a guide instead. Readiness additionally requires that any supplied
+guide be `approved: true`; an unapproved guide holds the document non-ready.
+
 A downstream gate accepting the document does not establish that collection was
 complete. Only the readiness check says that.
 
@@ -179,11 +219,11 @@ output paths, and `mode: full`.
 Then run both gates yourself:
 
 ```powershell
-./tools/Check-Coverage.ps1 -DocumentPath <run>/document.json `
+./tools/Check-Coverage.ps1 -DocumentPath <generation>/document.json `
                            -ManifestPath <run>/tests/manifest.json `
                            -TestsRoot    <run>/rust `
                            -ReportPath   <run>/reports/coverage.json
-./tools/Check-TestQuality.ps1 -DocumentPath <run>/document.json `
+./tools/Check-TestQuality.ps1 -DocumentPath <generation>/document.json `
                               -ManifestPath <run>/tests/manifest.json `
                               -TestsRoot    <run>/rust `
                               -ReportPath   <run>/reports/test-quality.json
@@ -246,10 +286,16 @@ finding: record both numbers and say the agent misreported.
 Consult the report for the one thing cargo cannot tell you — the `suspect`
 classification of each failure, which decides *who* must act:
 
-- `suspect: code` and budget remains — re-invoke `Code Agent` in `repair` mode,
-  passing the failing `cargo` output. Note that `repair` is specified around a
-  *parity* report; before stage 5 there is none, so hand it the cargo failures
-  explicitly and do not claim a parity report exists.
+- `suspect: code` and budget remains — **do not dispatch `repair`.** `repair`
+  declares the parity report a required input (`code-agent.agent.md`, Inputs),
+  and before stage 5 no parity report exists. Raw cargo output is not an
+  advertised substitute, so the agent must either reject the request or invent an
+  interpretation of a mode it was handed without its required input — exactly the
+  ambiguity the rest of this prompt removes. Instead re-invoke `Code Agent` in
+  the **same mode as the original dispatch** (`full`), with the identical
+  document and test suite, plus the failing `cargo` output as build feedback, and
+  say plainly that this is a build-failure retry and not a parity repair. Reserve
+  `repair` for stage 5, where a parity report exists to hand it. Consumes a round.
 - `suspect: test` or `suspect: document` — **do not re-invoke the Code agent.**
   It has correctly refused to edit a test or implement a behavior it believes is
   wrong, and iterating against a contradiction cannot converge. Carry
@@ -298,6 +344,28 @@ reproduces the same document and therefore the same `document_gap`. Allow at mos
 restart, stop as `blocked` — the extraction or the source itself is ambiguous and
 that needs a human, not another pass.
 
+**Restarts write to a new generation directory.** The collector's output guard
+rejects an existing file outright — `Output already exists; use a new path`
+(`src/Requirements.Collector/SafeOutput.cs`) — and only `prepare-legacy` accepts
+`--force`. So a restart that reuses the previous `outputPath` fails on the write,
+not on the gap it was sent to fix. Write the restart's document to a fresh
+`<run>/collect/gen2/` (then `gen3/`, …). After a successful restart,
+`<generation>` means that new directory for every downstream stage; treat the
+previous generation and everything derived from it — tests, crate, reports — as
+invalidated, and say so in the run report rather than leaving two documents on
+disk with no statement of which one governed.
+
+**A restart must change an input, or it is the same run twice.** The collector
+accepts no parity report, no gap report and no work order, so returning to
+stage 2 with an identical extraction, identical `portingGuide` and identical
+`task_id` re-derives the same document by construction. Before spending a
+restart, identify which input changes: a newly supplied or revised
+`porting_guide` (the usual case, and the only one that resolves a mapping
+question), or a re-run of stage 1 that produces a *different* `extractionId`.
+If no input changes, do not spend the restart — stop as `blocked` and report the
+`document_gap` with the specific decision it needs. Record the changed input in
+the run report next to the restart count.
+
 ### 6 — verify
 
 You invoke `verifier-orchestrator` directly. It in turn drives
@@ -316,6 +384,30 @@ manifest to `targets\route-resolution-client.json` and the environment to a
 provisioned Substrate host, so it does not apply to an arbitrary sample crate.
 Record `blocked` rather than reshaping the run to fit the gate.
 
+**Check applicability before running any of the steps below.** Both scripts
+resolve `Code` *inside* the verification workspace:
+`New-VerificationSourceManifest.ps1` throws `Code must be a canonical relative
+path` for anything rooted or drive-qualified, and the preflight resolves
+`Resolve-ContainedPath -Root $WorkspaceRoot -Child $Code` and then checks that
+the workspace's `origin` remote equals the pinned Substrate repository URL. So
+`-Code <run>/rust` cannot work: it is absolute, and the generated crate lives
+under *this* repository, not under a Substrate checkout.
+
+Stage 6 therefore requires two additional inputs, and applies only when the
+generated crate has actually been integrated into a Substrate workspace:
+
+| Key | Meaning |
+| --- | --- |
+| `verification_workspace_root` | Absolute path to the provisioned **Substrate** checkout whose `origin` matches the pinned trusted URL. Not this repository. |
+| `verification_code` | Canonical **workspace-relative** code scope, e.g. `src\route-resolution-client`. Never rooted, never containing `:` or `..`. |
+
+If either is absent, or `verification_code` does not resolve inside
+`verification_workspace_root`, record stage 6 as `blocked` /
+`missing-verification-inputs` and state that the generated crate has not been
+integrated into a verification workspace. Do **not** substitute the repository
+root, and do not relativise `<run>/rust` against it to satisfy the argument
+validator — that produces a path the preflight resolves to the wrong tree.
+
 **1. Generate the source manifest.** Run every script in this stage with
 `pwsh` (PowerShell **7.1 or later**). They hash with `SHA256.HashData` and
 `Convert.ToHexString`, which are .NET 5 APIs and so are absent from 7.0. Both
@@ -325,10 +417,13 @@ than failing partway through with a missing-method error.
 
 ```powershell
 pwsh -File ./scripts/New-VerificationSourceManifest.ps1 `
-     -WorkspaceRoot <repo root> `
-     -Code <run>/rust `
+     -WorkspaceRoot <verification_workspace_root> `
+     -Code <verification_code> `
      -OutputPath <run>/reports/source-manifest.json
 ```
+
+`-Code` is the workspace-relative `verification_code`, not `<run>/rust`. Only
+`-OutputPath` is absolute here.
 
 **The SHA-256 you need is the script's stdout, not a field in the file** — the
 manifest itself has no `sha256` key. Capture stdout; that value is
@@ -346,8 +441,8 @@ without this step:
 
 ```powershell
 pwsh -File ./scripts/Invoke-SubstrateTdsPreflight.ps1 `
-    -RunId <run_id> -WorkspaceRoot <repo root> `
-    -Code <run>/rust -ArtifactRoot <absolute artifact root> `
+    -RunId <run_id> -WorkspaceRoot <verification_workspace_root> `
+    -Code <verification_code> -ArtifactRoot <absolute artifact root> `
     -SourceManifest reports/source-manifest.json `
     -SourceSha256 <stdout hash from step 1> `
     -TdsMachine <tds_machine> `
@@ -428,6 +523,9 @@ expected result anywhere outside a provisioned Substrate host.
 `contracts/verifier-orchestration-request.schema.json`:
 
 - `schema_version` is `"2.0"`; `run_id` matches the run.
+- `rust.workspace_root` is `verification_workspace_root` and `rust.code` is
+  `verification_code` — the same pair given to the two scripts. A request whose
+  `rust.code` points at `<run>/rust` names a path the verifier cannot resolve.
 - `artifact_root` and `rust.workspace_root` are **absolute Windows paths**; every
   other path is **relative** to its root. The schema rejects the two being mixed
   up, and that rejection is the most common way this stage fails.
@@ -447,11 +545,21 @@ and no prose alongside it.
 
 **5. Validate the result.** It must conform to
 `contracts/verifier-orchestration-result.schema.json` and carry one gate entry
-per verifier. Require exact equality of **every** `input_identity` field against
-the request you sent — `run_id`, `artifact_root`, `workspace_root`, `code`,
-`source_manifest`, `source_sha256`, `document`, `document_sha256`,
-`tests_manifest`, `tests_manifest_sha256`, `environment`, `tds_machine`,
-`dependency_manifest`, `dependency_manifest_sha256`, `preflight_result`, and
+per verifier.
+
+First compare the **top-level** `result.run_id` with the `run_id` you sent.
+`run_id` is a top-level property of the result, **not** a member of
+`input_identity`: `$defs.inputIdentity` declares exactly 15 required fields with
+`additionalProperties: false`, and `run_id` is not among them. Looking for
+`input_identity.run_id` finds nothing in any schema-conforming result, so
+treating it as an identity field rejects every valid result — and a result that
+did carry it would be schema-invalid.
+
+Then require exact equality of **all 15** `input_identity` fields against the
+request you sent — `artifact_root`, `workspace_root`, `code`, `source_manifest`,
+`source_sha256`, `document`, `document_sha256`, `tests_manifest`,
+`tests_manifest_sha256`, `environment`, `tds_machine`, `dependency_manifest`,
+`dependency_manifest_sha256`, `preflight_result`, and
 `preflight_result_sha256` (plus any optional receipt or runtime-evidence hashes
 the request carried). Checking only the code and source hash lets a result that
 judged a different document, test manifest, dependency set, preflight receipt,
@@ -504,8 +612,18 @@ stages, not per stage. Stop early when:
 - a round produces no measurable change — the same gate findings with the same
   counts means it is not converging, and another round will not help;
 - a stage reports `blocked` on a missing input, which no round can create; or
-- the code report is `blocked` and parity has already ruled — the ruling needs a
-  human decision, not another iteration.
+- the code report is `blocked`, parity has ruled, and the ruling is **not
+  actionable** — it needs a human decision, not another iteration.
+
+An adjudication that *is* actionable is not a stop condition. When Code returns
+`blocked` on a suspected test or document defect and parity then rules
+`test_wrong` with an `incorrect_test` work order, the conflict has been resolved
+by the agent commissioned to resolve it: dispatch the work order to `GenTest`,
+re-run the affected gates, and consume a round. Code is *required* to return
+`blocked` for a suspected test defect rather than edit the suite, so treating
+that `blocked` as terminal would strand every run at the exact point the parity
+contract was designed to unblock. Stop only when the ruling asks for a decision
+no agent in the pipeline is authorised to make, or the budget is spent.
 
 Never spend the last round on a stage you have not gated, and never extend the
 budget on your own authority.

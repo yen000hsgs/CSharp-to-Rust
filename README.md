@@ -15,8 +15,9 @@ C# -> Extractor -> Collector -> Distributor
                              Verifiers: syntax/style, feature parity, security, e2e
 ```
 
-An orchestrator is intended to drive the stages and route on each agent's
-handoff. The orchestrator implementation is not included in this repository.
+An orchestrator drives the stages and routes on each agent's handoff. See
+[`migration-orchestrator`](.github/agents/migration-orchestrator.agent.md) and
+[Run a migration](#run-a-migration) below.
 
 ## Agents
 
@@ -51,6 +52,7 @@ agency copilot --agent migration-orchestrator --source repo `
   --input task_id=task-42 `
   --input csharp_source_root=Q:\src\MyProject `
   --input execution_approved=true `
+  --input porting_guide=Q:\src\porting-guide.md `
   --add-dir Q:\src\MyProject `
   --prompt "Run the full migration and return the run verdict." `
   --allow-all-tools
@@ -58,6 +60,13 @@ agency copilot --agent migration-orchestrator --source repo `
 
 `run_id`, `task_id` and `csharp_source_root` are mandatory. The orchestrator
 will not guess a project: omit either of the last two and it stops.
+
+`porting_guide` is optional but usually decisive. The collector records Rust
+mapping choices it cannot derive from C# evidence — decimal representation,
+`Result` versus panic, whether formatting is contractual, the shape of the public
+surface — as open questions, and a document carrying unresolved mapping questions
+never reaches ready. Supply an approved guide answering them or the run blocks at
+stage 2 no matter how clean the source is.
 
 `--add-dir` the C# source, since it lives outside the repository and is
 read-only to every agent including the orchestrator.
@@ -109,9 +118,11 @@ commands.
 The [code distributor](.agents/agents/code-distributor.agent.md) groups the
 collected requirements into feature work packages without rewriting their
 IDs or behavior. Its `distribution.json` records prerequisites, shared concerns,
-and unassigned work. The orchestrator passes a package's existing feature IDs
-through GenTest/Code's `focus` input; it still owns scheduling and shared-file
-coordination. See [distributor usage](docs/code-distributor.md).
+and unassigned work. The orchestrator does **not** currently consume it: it
+rejects a `focus` input, because `Check-Coverage.ps1` has no scope parameter and
+always scores the complete `document.json`, so a focused run could never reach
+exit 0. Package-at-a-time migration needs scope support in the coverage gate
+first. See [distributor usage](docs/code-distributor.md).
 
 Build and exercise both helpers and the calculator sample from the repository
 root:
