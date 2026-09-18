@@ -165,27 +165,31 @@ path or matching ID is not cryptographic authentication.
 Relative `source.root` paths resolve against the document directory.
 `documentPath`, `evidenceReferences`, and the guide path resolve against the
 context directory. Feature `source_refs` resolve against the extraction source
-root, with an optional `#Lstart-Lend` location. Preparation writes absolute
-source-root, document and extraction-reference paths to avoid worktree ambiguity.
+root, with an optional `#Lstart-Lend` location. Preparation writes these
+source-root, document, and extraction-reference paths *relative* to the artifact
+that carries them, so a prepared package keeps its meaning after it moves. When
+no relative path exists, such as a different volume, the absolute path is kept.
 
 ### Transport, relocation, and new extractions
 
-The compiler's [snapshot ID is context-bound](extractor.md#snapshot-identity-is-context-bound),
-not a portable source-content hash. These operations have different contracts:
+The compiler's [snapshot ID is location-independent](extractor.md#snapshot-identity-is-location-independent),
+so identical source extracted in two checkouts shares an ID. These operations have
+different contracts:
 
 | Operation | Current behavior |
 | --- | --- |
-| Copy the same snapshot and paired authoring files | No re-extraction or ID change is needed. A companion authored with relative `documentPath` can travel with its document. `source.root` must still resolve to the source root recorded in that same snapshot. |
-| Move files produced by `prepare` unchanged | Preparation uses absolute paths. Moving the document normally invalidates the stored `documentPath`; the helper does not automatically relocate the package or source evidence. |
-| Re-extract in another checkout | This is a new observed context and can have a different ID despite identical source. An old companion cannot validate against it. Changing only the document's source navigation still leaves the ID mismatch. |
+| Copy the same snapshot and paired authoring files | No re-extraction or ID change is needed. The whole package travels together, and `source.root` still resolves to the source root recorded in that same snapshot. |
+| Move files produced by `prepare` unchanged | Preparation writes paths relative to the artifact carrying them, so moving the extraction, document, and context together keeps the stored bindings valid. Moving only *some* of them still breaks the association, and the helper does not relocate source evidence for you. |
+| Re-extract in another checkout | Identical source, task, and build settings yield the same ID, so an existing companion still validates. Any real payload change produces a different ID and is correctly rejected. |
 
 Relative navigation is not an automatic source-root remapping facility. A
-relative compiler `rootDirectory`, when present, resolves against the compiler
-JSON's directory; the actual extractor emits an absolute source root. A copied
-real snapshot therefore retains its original source location. Transporting
-files does not make missing source available, prove freshness, or establish
-semantic parity: validation checks path association and structure, not whether
-the referenced source has been inspected at the destination.
+relative compiler `rootDirectory` resolves against the compiler JSON's
+directory, which is what the extractor now emits. A copied real snapshot
+therefore describes the source beside it rather than its original absolute
+location. Transporting files does not make missing source available, prove
+freshness, or establish semantic parity: validation checks path association and
+structure, not whether the referenced source has been inspected at the
+destination.
 
 Preserve original compiler artifacts, IDs, and paired outputs. If a new checkout
 needs a fresh extraction, create a new document/context pair and review its

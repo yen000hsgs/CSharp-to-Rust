@@ -110,8 +110,9 @@ for every calculator or invent a dependency from a name.
 ## Identity and readiness
 
 Relative `documentPath` and `contextPath` resolve against the distribution
-file's directory. Preparation writes absolute paths. The original document,
-context, and extraction keep their own existing resolution rules.
+file's directory, and preparation writes them in that relative form, so a plan
+that travels with its document and context keeps its bindings. The original
+document, context, and extraction keep their own existing resolution rules.
 
 The digests bind the exact current document/context bytes, including
 whitespace, and are checked with the existing task/snapshot and path

@@ -11,6 +11,21 @@ internal static class SafeOutput
     public static string SourceRoot(string input, ExtractionArtifact extraction) =>
         Path.GetFullPath(extraction.RootDirectory, Path.GetDirectoryName(Path.GetFullPath(input))!);
 
+    // Paths persisted into an artifact are written relative to that artifact's own directory, so a
+    // document, context, or distribution plan keeps meaning after the package moves to another
+    // checkout or machine. Every reader already resolves these fields against the same anchor
+    // (SourceRoot above, DocumentValidation, and DistributionValidation.BindPath), so writing the
+    // relative form is what makes the round trip location-independent. Falls back to the absolute
+    // path when no relative path exists, such as a different volume.
+    public static string PortablePath(string target, string artifactPath)
+    {
+        var absolute = Path.GetFullPath(target);
+        var anchor = Path.GetDirectoryName(Path.GetFullPath(artifactPath));
+        if (string.IsNullOrEmpty(anchor)) return absolute;
+        var relative = Path.GetRelativePath(anchor, absolute);
+        return string.IsNullOrEmpty(relative) || Path.IsPathFullyQualified(relative) ? absolute : relative;
+    }
+
     public static void Write(string output, string input, ExtractionArtifact extraction,
         IReadOnlyDictionary<string, SymbolFact> symbols, RequirementsArtifact draft, bool force)
     {

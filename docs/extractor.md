@@ -212,25 +212,29 @@ paths and IDs and are not evidence that the current source or build context has
 been inspected. Artifacts are ignored by Git because they may contain source
 evidence and machine-local paths.
 
-### Snapshot identity is context-bound
+### Snapshot identity is location-independent
 
-`extractionId` identifies the observed extraction payload, not portable source
-content. The helper hashes its serialized payload before assigning the ID;
-that payload includes `taskId`, the absolute `rootDirectory`, build settings,
-compiler facts, diagnostics, and limitations. Identical source extracted in
-two checkout roots can therefore produce different IDs. Repeating an unchanged
-payload is deterministic, but equal source text alone does not promise equal
-snapshot IDs.
+`extractionId` identifies the observed extraction payload. The helper hashes its
+serialized payload before assigning the ID; that payload includes `taskId`, build
+settings, compiler facts, diagnostics, and limitations, and deliberately excludes
+`rootDirectory`, so the checkout location is not part of identity. Identical source
+extracted in two checkout roots therefore produces the same ID, which is what lets a
+prepared package be handed off between checkouts and machines. Repeating an unchanged
+payload stays deterministic, and a meaningful source, configuration, or task change
+still changes the ID.
 
-Copying an existing compiler JSON file does not regenerate its snapshot or
-change its ID. Its source paths still describe the original observed context.
-Generating a new extraction in another checkout is different: requirements
-must not silently substitute it for the snapshot their companion names.
-Do not normalize historical paths, recompute IDs, or rebind companions in place.
-Portable source-content identity would be a separate contract, not a change to
-this schema 1.0 association key. See
+`rootDirectory` is written relative to the extraction file's own directory and is
+resolved against it, so a package that travels describes the source next to itself
+rather than at the location it was originally produced in.
+
+Copying an existing compiler JSON file does not regenerate its snapshot. Re-extracting
+identical source in another checkout now yields the same ID, so a companion authored in
+one checkout validates in the other once the package travels together. That is not a
+licence to pair requirements with a snapshot of *different* source: any payload change
+still changes the ID, and the association checks continue to enforce it. Do not
+hand-edit historical paths or recompute IDs in place. See
 [transport and relocation](requirements-collector.md#transport-relocation-and-new-extractions)
-for the current document-path constraints.
+for the document-path constraints.
 
 ## Analysis limits
 

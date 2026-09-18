@@ -13,8 +13,8 @@ internal static class DistributionPipeline
         {
             TaskId = upstream.Context.TaskId,
             ExtractionId = upstream.Context.ExtractionId,
-            DocumentPath = Path.GetFullPath(documentPath),
-            ContextPath = Path.GetFullPath(contextPath),
+            DocumentPath = SafeOutput.PortablePath(documentPath, output),
+            ContextPath = SafeOutput.PortablePath(contextPath, output),
             DocumentSha256 = upstream.DocumentSha256,
             ContextSha256 = upstream.ContextSha256,
             UnassignedFeatures = upstream.Document.Features.Select(feature => new UnassignedDistributionFeature(feature.Id,
