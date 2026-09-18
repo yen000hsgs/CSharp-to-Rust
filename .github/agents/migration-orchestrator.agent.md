@@ -240,12 +240,12 @@ manifest to `targets\route-resolution-client.json` and the environment to a
 provisioned Substrate host, so it does not apply to an arbitrary sample crate.
 Record `blocked` rather than reshaping the run to fit the gate.
 
-**1. Generate the source manifest.**
-
 **1. Generate the source manifest.** Run every script in this stage with
-`pwsh` (PowerShell 7+). They use `[System.IO.Path]::GetRelativePath`, which does
-not exist in Windows PowerShell 5.1 — under `powershell.exe` this fails with
-`does not contain a method named 'GetRelativePath'`.
+`pwsh` (PowerShell **7.1 or later**). They hash with `SHA256.HashData` and
+`Convert.ToHexString`, which are .NET 5 APIs and so are absent from 7.0. Both
+scripts declare `#requires -Version 7.1`, so an unsupported host — including
+Windows PowerShell 5.1 — exits 1 up front naming the required version, rather
+than failing partway through with a missing-method error.
 
 ```powershell
 pwsh -File ./scripts/New-VerificationSourceManifest.ps1 `
@@ -354,12 +354,16 @@ Write `artifacts/<run_id>/reports/run-report.json`, then summarize.
 `task_id` and `extraction_id` must match across every artifact. A mismatch means
 two runs have been spliced together; stop rather than reconcile.
 
-**Known defect (issue #6):** `extractionId` is currently a hash over an artifact
-containing an absolute `rootDirectory`, so the same commit yields a different id
-from a different checkout path. Keep one run on one checkout, and never compare
-an `extractionId` across machines or copy a document between run roots — it will
-fail identity checks that have nothing to do with its content. Record this in
-`limitations` whenever you emit an `extraction_id`.
+`extractionId` is location-independent (issue #6, fixed in #9): it is a hash over
+an artifact whose `rootDirectory` is relative, so the same commit yields the same
+id from any checkout path, and every persisted path is relative to the artifact
+that carries it. A run may therefore be prepared in one checkout and validated in
+another. An id mismatch is a genuine content or task mismatch — treat it as a real
+splice, not as a path artifact, and do not work around it by relocating files.
+
+One binding is still deliberately strict: a document paired with an extraction it
+was not prepared against is rejected even when both are local. That guard is
+intentional. Stop and re-run the stage rather than repairing the pairing by hand.
 
 ## The repair loop
 
