@@ -27,8 +27,10 @@ unprivileged; it validates preflight and runtime evidence but never receives or 
 
 ## Procedure
 
-Run both scripts with `pwsh` (PowerShell 7 or later). They declare `#requires -Version 7` and
-refuse to run under Windows PowerShell 5.1, which lacks `[System.IO.Path]::GetRelativePath`.
+Run both scripts with `pwsh` 7.1 or later. They declare `#requires -Version 7.1` and refuse to run
+under Windows PowerShell 5.1, which lacks `[System.IO.Path]::GetRelativePath`. 7.1 rather than 7.0 is
+the floor because both scripts hash with `SHA256.HashData` and `[Convert]::ToHexString`, which are
+.NET 5 APIs; a 7.0 host runs on .NET Core 3.1 and would fail at the first hashing call.
 
 1. The Orchestrator first runs `scripts\New-VerificationSourceManifest.ps1`, validates its canonical exact-set output,
    which excludes repository metadata plus standard .NET `bin`/`obj` and Cargo `target` directories only when project

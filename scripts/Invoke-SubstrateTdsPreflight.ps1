@@ -1,7 +1,9 @@
-#requires -Version 7
-# Uses [System.IO.Path]::GetRelativePath, which is absent in Windows PowerShell 5.1.
-# Run with pwsh; under powershell.exe this fails with a MethodNotFound error that
-# gives no hint the shell is the cause.
+#requires -Version 7.1
+# 7.1 is the API floor, not a style preference: [Convert]::ToHexString and
+# SHA256.HashData are .NET 5, which ships with PowerShell 7.1. A 7.0 host runs on
+# .NET Core 3.1 and would clear a bare "-Version 7" guard, then fail partway through
+# at the first hashing call. [System.IO.Path]::GetRelativePath additionally rules out
+# Windows PowerShell 5.1.
 
 [CmdletBinding()]
 param(
