@@ -444,10 +444,17 @@ and no prose alongside it.
 
 **5. Validate the result.** It must conform to
 `contracts/verifier-orchestration-result.schema.json` and carry one gate entry
-per verifier. Require exact equality of `run_id`, artifact root, workspace,
-code, and source hash between `input_identity` and the request you sent. A
-mismatch means the verdict describes different code than you submitted: record
-`blocked` with `invalid-verifier-result`. Do not reconcile it, and do not retry —
+per verifier. Require exact equality of **every** `input_identity` field against
+the request you sent — `run_id`, `artifact_root`, `workspace_root`, `code`,
+`source_manifest`, `source_sha256`, `document`, `document_sha256`,
+`tests_manifest`, `tests_manifest_sha256`, `environment`, `tds_machine`,
+`dependency_manifest`, `dependency_manifest_sha256`, `preflight_result`, and
+`preflight_result_sha256` (plus any optional receipt or runtime-evidence hashes
+the request carried). Checking only the code and source hash lets a result that
+judged a different document, test manifest, dependency set, preflight receipt,
+or TDS machine pass as identical. A mismatch in **any** field means the verdict
+describes a different input set than you submitted: record `blocked` with
+`invalid-verifier-result`. Do not reconcile it, and do not retry —
 per that agent's contract, a retry needs a fresh request.
 
 Fold the aggregate into your verdict: `fail` fails the run; `blocked` blocks
