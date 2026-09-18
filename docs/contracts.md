@@ -693,7 +693,7 @@ decide whether the migration is trustworthy.
   "run_id": "migration-001",
   "task_id": "task-42",
   "extraction_id": "12d809cc...",
-  "verdict": "pass_with_warnings",     // pass | pass_with_warnings | partial | fail | blocked
+  "verdict": "blocked",                // pass | pass_with_warnings | partial | fail | blocked
   "rounds_used": 2,
   "iteration_budget": 3,
   "stages": [
@@ -708,7 +708,7 @@ decide whether the migration is trustworthy.
   "coverage_level": "substantive",     // strongest level actually established
   "limitations": [
     "No C# differential runner supplied; parity differential skipped.",
-    "Verifier subgroup not invoked; requires host invocation."
+    "Verifier subgroup returned blocked; adapter validation is unimplemented."
   ],
   "blockers": [],
   "paths": { "document": "document.json", "manifest": "tests/manifest.json" }
