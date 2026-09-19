@@ -36,21 +36,25 @@ result remains a candidate verdict that a deterministic gate must validate befor
 
 ## Orchestration
 
-1. Create three child request objects conforming to `contracts\verification-request.schema.json`. Copy shared values
-   without rewriting paths, hashes, identifiers, or sentinel values. Set only the child `agent` field differently.
+1. Create three child request objects conforming to `contracts\verification-request.schema.json`:
+   - syntax/style receives only the common Rust identity plus the optional syntax tool receipt;
+   - security receives only the common Rust identity;
+   - end-to-end receives the common Rust identity plus the complete `end_to_end` block.
+   Never copy environment, deployment, dependency, preflight, or runtime-evidence fields into either static request.
 2. Invoke `syntax-style-verifier` and `security-verifier` as independent subagents using the `agent` tool. Dispatch
    them in parallel when supported. Send each subagent exactly its JSON request and no prose.
 3. Never substitute a built-in or general-purpose agent. If an exact verifier is unavailable, record that gate as
    `blocked` with category `verifier-unavailable`.
 4. Check every child response against the structure and invariants in `contracts\verification-result.schema.json`.
    Require exact equality of schema version, run ID, agent, artifact root, workspace, code, source hash, and all
-   applicable artifact hashes with the child request. For end-to-end results, also require exact equality of environment
-   and TDS machine. Treat malformed, contradictory, or identity-mismatched output as `blocked` with category
+   applicable artifact hashes with the child request. For end-to-end results, also require exact equality of the
+   environment identifier and every adapter-specific field that was supplied. Require TDS machine equality only for
+   `environment: "substrate-tds"`. Treat malformed, contradictory, or identity-mismatched output as `blocked` with category
    `invalid-verifier-result`.
 5. Invoke `end-to-end-verifier` only after syntax/style and security both return `pass`. If either static gate fails or
    is blocked, record end-to-end as `not-run` and do not request runtime execution or deployment.
-6. The end-to-end verifier remains read-only and consumes only pre-existing authenticated preflight and runtime
-   evidence. This orchestrator never invokes a privileged executor or TDS MCP.
+6. The end-to-end verifier remains read-only and consumes only pre-existing host-validated environment inputs and
+   runtime evidence. This orchestrator never invokes a privileged executor, environment control plane, or TDS MCP.
 7. Aggregate deterministically:
    - `fail` if any invoked verifier returns `fail`;
    - otherwise `blocked` if any verifier is blocked, unavailable, invalid, or not run because a prerequisite did not
@@ -63,6 +67,6 @@ result remains a candidate verdict that a deterministic gate must validate befor
 Return exactly one JSON object and no Markdown. It must conform to
 `contracts\verifier-orchestration-result.schema.json`, include one gate entry for each of the three verifier names, and
 copy every input artifact hash into `input_identity`. Preserve concise summaries from valid child results without
-copying unbounded logs or source text. Copy the end-to-end environment and TDS machine into `input_identity` without
-rewriting them. The result is a candidate model verdict; the deterministic host must validate it before using it as a
-release gate.
+copying unbounded logs or source text. Copy the end-to-end environment and all supplied adapter fields into
+`input_identity` without rewriting them. The result is a candidate model verdict; the deterministic host must validate
+it before using it as a release gate.

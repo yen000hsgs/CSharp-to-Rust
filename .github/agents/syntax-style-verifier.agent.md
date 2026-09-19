@@ -23,18 +23,22 @@ both paths to remain inside their declared roots. The source hash names the Rust
 deterministic host. Echo all request identity fields exactly. Do not claim to perform cryptographic validation with
 read/search tools.
 
+This is a local code gate. Reject environment, deployment, machine, dependency, preflight, and runtime-evidence fields;
+those belong only to `end-to-end-verifier`.
+
 ## Verification
 
 1. Review the Rust source for idiomatic naming, formatting, avoidable clones or allocations, unnecessary mutability,
    suspicious casts, ignored results, dead or unreachable code, unsafe code, panic-based error handling, and unclear
    public APIs.
-2. Do not receive an execution tool. Compiler, rustfmt, and Clippy checks must come from the authenticated constrained
-   worker receipt named by `tool_validation_receipt` and `tool_validation_receipt_sha256`.
-3. Accept a tool result only when the deterministic host has validated it against
+2. Do not receive an execution tool. When a local tool receipt is supplied, compiler, rustfmt, and Clippy checks come
+   from that receipt rather than from an environment adapter.
+3. Accept a supplied tool result only when the deterministic host has validated it against
    `contracts\syntax-tool-validation.schema.json`, authenticated its canonical payload, and matched its run, source,
    package, target, toolchain, isolation, and build-input identities to this request.
-4. If the receipt is absent, invalid, unauthenticated, incomplete, or bound to another input, return
-   `verification-blocked`.
+4. If no receipt is supplied, perform the local read-only source review and clearly limit the checks to what was
+   inspected. An invalid, unauthenticated, incomplete, or identity-mismatched supplied receipt is
+   `verification-blocked`; absence alone is not.
 5. Report only concrete violations. Do not fail for subjective preference.
 
 ## Response

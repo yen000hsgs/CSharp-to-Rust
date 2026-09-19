@@ -80,11 +80,11 @@ extraction. It defaults to false and stage 1 blocks without it, deliberately:
 extraction runs the project's own build, so it is opt-in rather than implied by
 requesting a run. Omit it if you have not approved that.
 
-Stages 1-5 run with the above. **Stage 6 (the verifier subgroup) additionally
-needs `tds_machine`, `attestation_key_path` and `attestation_key_id`**; without
-them stage 6 records `blocked` / `missing-verification-inputs` and the rest of
-the run still completes. Note that stage 6 currently returns `blocked` on any
-host — see [Known limitations](#known-limitations).
+Stages 1-5 run with the above. Stage 6 defaults to local verification of the
+generated crate and stage-4 test evidence. Set
+`verification_environment=substrate-tds` only for code integrated into a
+Substrate checkout; that add-on additionally needs `tds_machine`,
+`attestation_key_path`, and `attestation_key_id`.
 
 Everything lands in `artifacts/<run_id>/`, with the verdict in
 `artifacts/<run_id>/reports/run-report.json`.
@@ -269,7 +269,8 @@ thing it exists to prevent:
 - **The gates check test *substance*, not test *correctness*.** A test can assert
   something real and still assert the wrong thing; that is what the differential
   pass and human review are for.
-- **Stage 6 cannot currently return a ready receipt on any host.** Three
+- **The optional Substrate TDS adapter cannot currently return a ready receipt
+  on any host.** Three
   validation flags in `scripts/Invoke-SubstrateTdsPreflight.ps1` —
   `controlPlaneProvenanceValidationImplemented`,
   `csharpBaselineGraphValidationImplemented` and

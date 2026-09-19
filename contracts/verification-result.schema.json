@@ -162,6 +162,16 @@
           "type": "string",
           "minLength": 1
         },
+        "environment_config": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment_config_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment_target": {
+          "$ref": "#/$defs/identifier"
+        },
         "tds_machine": {
           "$ref": "#/$defs/identifier"
         },
@@ -204,15 +214,29 @@
         "tool_validation_receipt_sha256": [
           "tool_validation_receipt"
         ],
+        "environment_config": [
+          "environment_config_sha256"
+        ],
+        "environment_config_sha256": [
+          "environment_config"
+        ],
+        "dependency_manifest": [
+          "dependency_manifest_sha256"
+        ],
+        "dependency_manifest_sha256": [
+          "dependency_manifest"
+        ],
+        "preflight_result": [
+          "preflight_result_sha256"
+        ],
+        "preflight_result_sha256": [
+          "preflight_result"
+        ],
         "runtime_evidence": [
-          "runtime_evidence_sha256",
-          "runtime_evidence_validation_receipt",
-          "runtime_evidence_validation_receipt_sha256"
+          "runtime_evidence_sha256"
         ],
         "runtime_evidence_sha256": [
-          "runtime_evidence",
-          "runtime_evidence_validation_receipt",
-          "runtime_evidence_validation_receipt_sha256"
+          "runtime_evidence"
         ],
         "runtime_evidence_validation_receipt": [
           "runtime_evidence",
@@ -324,9 +348,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "name",
-        "machine",
-        "attestation"
+        "name"
       ],
       "properties": {
         "name": {
@@ -473,25 +495,36 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "signature_verified",
-        "canonical_payload_matches",
-        "all_blobs_verified",
-        "execution_plan_verified",
+        "validation_mode",
+        "source_identity_verified",
+        "artifact_hashes_verified",
         "exact_set_coverage_verified",
         "deterministic_status"
       ],
       "properties": {
-        "signature_verified": {
+        "validation_mode": {
+          "enum": [
+            "local-host",
+            "authenticated-adapter"
+          ]
+        },
+        "source_identity_verified": {
           "const": true
+        },
+        "artifact_hashes_verified": {
+          "const": true
+        },
+        "signature_verified": {
+          "type": "boolean"
         },
         "canonical_payload_matches": {
-          "const": true
+          "type": "boolean"
         },
         "all_blobs_verified": {
-          "const": true
+          "type": "boolean"
         },
         "execution_plan_verified": {
-          "const": true
+          "type": "boolean"
         },
         "exact_set_coverage_verified": {
           "const": true
@@ -598,6 +631,27 @@
               "verification-blocked"
             ]
           },
+          "input": {
+            "properties": {
+              "document": false,
+              "document_sha256": false,
+              "tests_manifest": false,
+              "tests_manifest_sha256": false,
+              "environment": false,
+              "environment_config": false,
+              "environment_config_sha256": false,
+              "environment_target": false,
+              "tds_machine": false,
+              "dependency_manifest": false,
+              "dependency_manifest_sha256": false,
+              "preflight_result": false,
+              "preflight_result_sha256": false,
+              "runtime_evidence": false,
+              "runtime_evidence_sha256": false,
+              "runtime_evidence_validation_receipt": false,
+              "runtime_evidence_validation_receipt_sha256": false
+            }
+          },
           "risk": false,
           "environment": false,
           "dependency_readiness": false,
@@ -625,12 +679,6 @@
       },
       "then": {
         "properties": {
-          "input": {
-            "required": [
-              "tool_validation_receipt",
-              "tool_validation_receipt_sha256"
-            ]
-          },
           "checks": {
             "minItems": 1,
             "items": {
@@ -670,14 +718,6 @@
         ]
       },
       "then": {
-        "properties": {
-          "input": {
-            "required": [
-              "tool_validation_receipt",
-              "tool_validation_receipt_sha256"
-            ]
-          }
-        },
         "anyOf": [
           {
             "properties": {
@@ -730,6 +770,29 @@
               "invalid-input",
               "verification-blocked"
             ]
+          },
+          "input": {
+            "properties": {
+              "tool_validation_receipt": false,
+              "tool_validation_receipt_sha256": false,
+              "document": false,
+              "document_sha256": false,
+              "tests_manifest": false,
+              "tests_manifest_sha256": false,
+              "environment": false,
+              "environment_config": false,
+              "environment_config_sha256": false,
+              "environment_target": false,
+              "tds_machine": false,
+              "dependency_manifest": false,
+              "dependency_manifest_sha256": false,
+              "preflight_result": false,
+              "preflight_result_sha256": false,
+              "runtime_evidence": false,
+              "runtime_evidence_sha256": false,
+              "runtime_evidence_validation_receipt": false,
+              "runtime_evidence_validation_receipt_sha256": false
+            }
           },
           "environment": false,
           "dependency_readiness": false,
@@ -866,31 +929,57 @@
               "document_sha256",
               "tests_manifest",
               "tests_manifest_sha256",
-              "environment",
-              "tds_machine",
-              "dependency_manifest",
-              "dependency_manifest_sha256",
-              "preflight_result",
-              "preflight_result_sha256"
+              "environment"
             ],
             "properties": {
-              "environment": {
-                "const": "substrate-tds"
-              },
-              "tds_machine": {
-                "$ref": "#/$defs/identifier",
-                "not": {
-                  "anyOf": [
-                    {
-                      "const": "*"
-                    },
-                    {
-                      "pattern": "^[aA][uU][tT][oO]$"
+              "tool_validation_receipt": false,
+              "tool_validation_receipt_sha256": false
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "environment": {
+                      "const": "substrate-tds"
                     }
+                  },
+                  "required": [
+                    "environment"
                   ]
+                },
+                "then": {
+                  "required": [
+                    "environment_config",
+                    "environment_config_sha256",
+                    "tds_machine",
+                    "dependency_manifest",
+                    "dependency_manifest_sha256",
+                    "preflight_result",
+                    "preflight_result_sha256"
+                  ],
+                  "properties": {
+                    "tds_machine": {
+                      "$ref": "#/$defs/identifier",
+                      "not": {
+                        "anyOf": [
+                          {
+                            "const": "*"
+                          },
+                          {
+                            "pattern": "^[aA][uU][tT][oO]$"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "tds_machine": false
+                  }
                 }
               }
-            }
+            ]
           }
         }
       }
@@ -928,10 +1017,74 @@
             "required": [
               "workspace_state_sha256",
               "runtime_evidence",
-              "runtime_evidence_sha256",
+              "runtime_evidence_sha256"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "const": "end-to-end-verifier"
+          },
+          "result_category": {
+            "enum": [
+              "passed",
+              "tests-failed",
+              "environment-blocked"
+            ]
+          },
+          "input": {
+            "properties": {
+              "environment": {
+                "const": "substrate-tds"
+              }
+            },
+            "required": [
+              "environment"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "result_category",
+          "input"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "required": [
               "runtime_evidence_validation_receipt",
               "runtime_evidence_validation_receipt_sha256"
             ]
+          },
+          "evidence_validation": {
+            "required": [
+              "signature_verified",
+              "canonical_payload_matches",
+              "all_blobs_verified",
+              "execution_plan_verified"
+            ],
+            "properties": {
+              "validation_mode": {
+                "const": "authenticated-adapter"
+              },
+              "signature_verified": {
+                "const": true
+              },
+              "canonical_payload_matches": {
+                "const": true
+              },
+              "all_blobs_verified": {
+                "const": true
+              },
+              "execution_plan_verified": {
+                "const": true
+              }
+            }
           }
         }
       }

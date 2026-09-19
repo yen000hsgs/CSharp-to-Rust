@@ -44,13 +44,14 @@ Create a JSON file conforming to `contracts\verifier-orchestration-request.schem
 
 - the artifact root;
 - the generated Rust workspace, relative code path, source-manifest path, and source-manifest SHA-256;
-- an optional authenticated syntax-worker receipt and hash;
-- the intermediate `document.json`, generated-tests manifest, dependency manifest, authenticated TDS preflight, and
-  their hashes;
-- runtime evidence and its validation receipt when preflight is ready.
+- an optional local syntax-worker receipt and hash;
+- the intermediate `document.json`, generated-tests manifest, and explicit end-to-end environment identifier;
+- local runtime evidence and hash, or adapter-specific config, dependency, preflight, and authenticated evidence fields.
 
-The syntax gate returns `verification-blocked` until the constrained worker receipt exists. The end-to-end gate returns
-`dependency-blocked` while deployment or runtime dependencies remain unavailable.
+Syntax/style and security never receive environment fields. The syntax gate can
+perform a local read-only review without a receipt; a supplied invalid receipt
+still blocks verification. End-to-end defaults to `local`; deployment and
+machine fields are required only by adapters that declare them.
 
 ## Run
 
@@ -72,5 +73,7 @@ This agent can also be invoked as stage 6 of a full migration run by `migration-
 validates the request itself. Either launcher inherits the deterministic host's responsibilities, and in both cases the
 aggregate is a candidate model verdict that a deterministic gate must validate before it releases anything.
 
-The end-to-end verifier consumes `.github\skills\substrate-tds-verification\SKILL.md` as procedural context but never
-receives TDS tools. A separate privileged executor may run only after deterministic authenticated preflight succeeds.
+For `environment: "substrate-tds"`, the end-to-end verifier consumes
+`.github\skills\substrate-tds-verification\SKILL.md` as adapter context but never
+receives TDS tools. A separate privileged executor may run only after
+deterministic authenticated preflight succeeds.
