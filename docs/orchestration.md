@@ -28,7 +28,8 @@ It repeats the required checks after the model returns and accepts or rejects th
 
 The model orchestrator only:
 
-1. copies validated fields into three child requests;
+1. copies the common Rust identity into three child requests, adding syntax
+   receipt fields only to syntax/style and environment fields only to end-to-end;
 2. invokes syntax/style and security independently;
 3. checks child response structure and identity consistency;
 4. invokes end-to-end only after both static gates pass; and
@@ -50,10 +51,13 @@ static gate does not pass.
 | Syntax receipt | Artifact root plus relative path | Exact file SHA-256 |
 | `document.json` | Artifact root plus relative path | Exact file SHA-256 |
 | Generated-tests manifest | Artifact root plus relative path | Exact file SHA-256 |
-| Dependency manifest | Verifier project plus relative path | Exact file SHA-256 |
-| TDS preflight | Artifact root plus relative path | Exact file SHA-256 and authenticated payload |
-| Runtime evidence | Artifact root plus relative path | Exact file SHA-256, signature, and validation receipt |
+| Environment config | Adapter-defined root plus relative path | Exact file SHA-256 |
+| Dependency manifest | Adapter-defined root plus relative path | Exact file SHA-256 |
+| Adapter preflight | Artifact root plus relative path | Exact file SHA-256 and adapter validation |
+| Runtime evidence | Artifact root plus relative path | Exact file SHA-256; adapter authentication when required |
 
-No verifier treats conversational history as evidence. Compiler, lint, scanner, deployment, and runtime execution occur
-in constrained workers or executors and return authenticated artifacts. Current preflight blockers remain authoritative
-until reviewed executor and complete C# baseline graph validation exist.
+Syntax/style and security are local code gates and never receive environment
+fields. End-to-end selects behavior from its explicit environment identifier:
+`local` consumes host-validated local test evidence, while other environments
+use a tracked adapter config. `substrate-tds` is one optional adapter and its
+current preflight blockers remain authoritative.

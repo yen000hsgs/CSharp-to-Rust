@@ -22,6 +22,9 @@ invalid schema as `invalid-input`.
 Resolve `workspace_root` and the workspace-relative Rust `code` path. Require it to stay inside the workspace. Echo the
 artifact root, source-manifest path, and source hash prevalidated by the deterministic host.
 
+This is a local static code gate. Reject environment, deployment, machine, dependency, preflight, and runtime-evidence
+fields; those belong only to `end-to-end-verifier`.
+
 ## Verification
 
 1. Establish trust boundaries, externally controlled inputs, sensitive data, privileged operations, filesystem and

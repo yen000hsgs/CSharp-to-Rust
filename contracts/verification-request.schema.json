@@ -64,6 +64,15 @@
     "environment": {
       "$ref": "#/$defs/identifier"
     },
+    "environment_config": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "environment_config_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "environment_target": {
+      "$ref": "#/$defs/identifier"
+    },
     "tds_machine": {
       "$ref": "#/$defs/identifier"
     },
@@ -145,15 +154,29 @@
     "tool_validation_receipt_sha256": [
       "tool_validation_receipt"
     ],
+    "environment_config": [
+      "environment_config_sha256"
+    ],
+    "environment_config_sha256": [
+      "environment_config"
+    ],
+    "dependency_manifest": [
+      "dependency_manifest_sha256"
+    ],
+    "dependency_manifest_sha256": [
+      "dependency_manifest"
+    ],
+    "preflight_result": [
+      "preflight_result_sha256"
+    ],
+    "preflight_result_sha256": [
+      "preflight_result"
+    ],
     "runtime_evidence": [
-      "runtime_evidence_sha256",
-      "runtime_evidence_validation_receipt",
-      "runtime_evidence_validation_receipt_sha256"
+      "runtime_evidence_sha256"
     ],
     "runtime_evidence_sha256": [
-      "runtime_evidence",
-      "runtime_evidence_validation_receipt",
-      "runtime_evidence_validation_receipt_sha256"
+      "runtime_evidence"
     ],
     "runtime_evidence_validation_receipt": [
       "runtime_evidence",
@@ -182,6 +205,9 @@
           "tests_manifest": false,
           "tests_manifest_sha256": false,
           "environment": false,
+          "environment_config": false,
+          "environment_config_sha256": false,
+          "environment_target": false,
           "tds_machine": false,
           "dependency_manifest": false,
           "dependency_manifest_sha256": false,
@@ -211,6 +237,9 @@
           "tests_manifest": false,
           "tests_manifest_sha256": false,
           "environment": false,
+          "environment_config": false,
+          "environment_config_sha256": false,
+          "environment_target": false,
           "tds_machine": false,
           "dependency_manifest": false,
           "dependency_manifest_sha256": false,
@@ -237,33 +266,63 @@
           "document_sha256",
           "tests_manifest",
           "tests_manifest_sha256",
-          "environment",
-          "tds_machine",
-          "dependency_manifest",
-          "dependency_manifest_sha256",
-          "preflight_result",
-          "preflight_result_sha256"
+          "environment"
         ],
         "properties": {
-          "environment": {
-            "const": "substrate-tds"
-          },
-          "tds_machine": {
-            "not": {
-              "anyOf": [
-                {
-                  "const": "*"
-                },
-                {
-                  "pattern": "^[aA][uU][tT][oO]$"
-                }
-              ]
-            },
-            "pattern": "^[^*?]+$"
-          },
           "tool_validation_receipt": false,
           "tool_validation_receipt_sha256": false
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "environment": {
+                  "const": "substrate-tds"
+                }
+              },
+              "required": [
+                "environment"
+              ]
+            },
+            "then": {
+              "required": [
+                "environment_config",
+                "environment_config_sha256",
+                "tds_machine",
+                "dependency_manifest",
+                "dependency_manifest_sha256",
+                "preflight_result",
+                "preflight_result_sha256"
+              ],
+              "dependentRequired": {
+                "runtime_evidence": [
+                  "runtime_evidence_validation_receipt",
+                  "runtime_evidence_validation_receipt_sha256"
+                ]
+              },
+              "properties": {
+                "tds_machine": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "const": "*"
+                      },
+                      {
+                        "pattern": "^[aA][uU][tT][oO]$"
+                      }
+                    ]
+                  },
+                  "pattern": "^[^*?]+$"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "tds_machine": false
+              }
+            }
+          }
+        ]
       }
     }
   ]

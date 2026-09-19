@@ -49,11 +49,14 @@ You are invoked with a run request supplying:
 | `csharp_differential_runner` | no | Command implementing the C# side of the differential. See below. |
 | `iteration_budget` | no | Max repair rounds. Default **3**. |
 | `restart_budget` | no | Max stage-2 restarts. Default **1**. |
-| `tds_machine` | stage 6 | Explicit TDS machine. Never `auto` or `*`. |
-| `verification_workspace_root` | stage 6 | Absolute path to the provisioned Substrate checkout. Not this repository. |
-| `verification_code` | stage 6 | Canonical workspace-relative code scope inside that checkout. |
-| `attestation_key_path` | stage 6 | Preflight attestation key. Operator-supplied; not in the repo. |
-| `attestation_key_id` | stage 6 | Key id, e.g. `orchestrator-tds-preflight-v1`. |
+| `verification_environment` | no | End-to-end adapter identifier. Defaults to `local`. |
+| `verification_environment_config` | non-local stage 6 | Tracked adapter config and evidence contract. |
+| `verification_target` | adapter-specific | Explicit target identifier required by the selected adapter. |
+| `tds_machine` | Substrate TDS only | Explicit TDS machine. Never `auto` or `*`. |
+| `verification_workspace_root` | Substrate TDS only | Absolute path to the provisioned Substrate checkout. |
+| `verification_code` | Substrate TDS only | Canonical workspace-relative code scope inside that checkout. |
+| `attestation_key_path` | Substrate TDS only | Preflight attestation key. Operator-supplied; not in the repo. |
+| `attestation_key_id` | Substrate TDS only | Key id, e.g. `orchestrator-tds-preflight-v1`. |
 
 Two inputs are **not** supported and must be rejected rather than honoured:
 
@@ -64,14 +67,11 @@ Two inputs are **not** supported and must be rejected rather than honoured:
 
 If either is supplied, stop and say it is unsupported. Do not approximate it.
 
-The last five are required **only** to run stage 6. Without them stages 1–5 run
-normally and stage 6 records `blocked` / `missing-verification-inputs`. They are
-never guessed and never discovered by searching the filesystem.
-
-The dependency manifest is **not** a run input. The preflight pins it to
-`targets\route-resolution-client.json` and rejects anything else, just as it pins
-the environment config to `.github\verification-environments\substrate-tds.json`.
-Pass the pinned values; do not parameterise them.
+Stage 6 defaults to the `local` adapter. Environment-specific inputs are never
+guessed or discovered. The Substrate dependency manifest and environment config
+are not run inputs; that adapter pins them to
+`targets\route-resolution-client.json` and
+`.github\verification-environments\substrate-tds.json`.
 
 If `csharp_source_root` or `task_id` is missing, stop and report it. Never pick
 a project for the user, and never start a run against a directory you guessed.
@@ -379,12 +379,31 @@ launcher, and **you inherit the host's responsibilities**: build the request,
 validate it, and verify the result's identity. Do not skip these because the
 invocation now succeeds without them.
 
-Stage 6 is currently scoped to one target. The preflight pins the dependency
-manifest to `targets\route-resolution-client.json` and the environment to a
-provisioned Substrate host, so it does not apply to an arbitrary sample crate.
-Record `blocked` rather than reshaping the run to fit the gate.
+Select `verification_environment`, defaulting to `local`. Only the
+end-to-end child receives environment fields; syntax/style and security receive
+only the local Rust source identity and their verifier-specific inputs.
 
-**Check applicability before running any of the steps below.** Both scripts
+For `local`, verify the generated crate directly:
+
+1. Set `rust.workspace_root` to the absolute `<run>\rust` path and `rust.code`
+   to `"."`.
+2. Generate a stable source manifest for that pair with
+   `New-VerificationSourceManifest.ps1`.
+3. Use the stage-4 `reports\code-report.json` and its actual SHA-256 as
+   `end_to_end.runtime_evidence`. It must identify the same crate and measured
+   Cargo build/test results.
+4. Set `end_to_end.environment` to `"local"`. Do not add a machine, deployment,
+   dependency manifest, preflight, or TDS field.
+5. Continue at request construction below.
+
+For any other environment, require a tracked `verification_environment_config`
+that defines the adapter's workspace, target, evidence schema, and readiness
+checks. Missing adapter support is `environment-blocked`; never apply the TDS
+rules to an unrelated repository.
+
+The remainder of the preflight procedure in this section is the
+`substrate-tds` add-on only. Select it only when the migrated code has actually
+been integrated into a provisioned Substrate checkout. Both scripts
 resolve `Code` *inside* the verification workspace:
 `New-VerificationSourceManifest.ps1` throws `Code must be a canonical relative
 path` for anything rooted or drive-qualified, and the preflight resolves
@@ -401,8 +420,9 @@ generated crate has actually been integrated into a Substrate workspace:
 | `verification_workspace_root` | Absolute path to the provisioned **Substrate** checkout whose `origin` matches the pinned trusted URL. Not this repository. |
 | `verification_code` | Canonical **workspace-relative** code scope, e.g. `src\route-resolution-client`. Never rooted, never containing `:` or `..`. |
 
-If either is absent, or `verification_code` does not resolve inside
-`verification_workspace_root`, record stage 6 as `blocked` /
+When `verification_environment` is `substrate-tds`, if either is absent, or
+`verification_code` does not resolve inside `verification_workspace_root`,
+record stage 6 as `blocked` /
 `missing-verification-inputs` and state that the generated crate has not been
 integrated into a verification workspace. Do **not** substitute the repository
 root, and do not relativise `<run>/rust` against it to satisfy the argument
@@ -500,7 +520,8 @@ particular is **not** a failure to start:
 | `4` | `ENVIRONMENT_BLOCKED` — e.g. the trusted instruction commit is absent | `blocked` on environment. No retry can fix it. |
 | `5` | `PREFLIGHT_ERROR` — internal failure | `blocked`. Report the diagnostic verbatim. |
 
-**Stage 6 cannot currently reach a ready receipt on any machine.** Three
+**The `substrate-tds` adapter cannot currently reach a ready receipt on any
+machine.** Three
 implementation flags in the script — `controlPlaneProvenanceValidationImplemented`,
 `csharpBaselineGraphValidationImplemented` and
 `privilegedExecutorValidationImplemented` — are hardcoded `$false`, and the last
@@ -523,15 +544,19 @@ expected result anywhere outside a provisioned Substrate host.
 `contracts/verifier-orchestration-request.schema.json`:
 
 - `schema_version` is `"2.0"`; `run_id` matches the run.
-- `rust.workspace_root` is `verification_workspace_root` and `rust.code` is
-  `verification_code` — the same pair given to the two scripts. A request whose
-  `rust.code` points at `<run>/rust` names a path the verifier cannot resolve.
+- For `local`, `rust.workspace_root` is the absolute `<run>\rust` path and
+  `rust.code` is `"."`. For another adapter, use its validated workspace and
+  relative code scope.
 - `artifact_root` and `rust.workspace_root` are **absolute Windows paths**; every
   other path is **relative** to its root. The schema rejects the two being mixed
   up, and that rejection is the most common way this stage fails.
 - Every `*_sha256` is the real SHA-256 of the file you are naming. Compute them;
   do not copy a hash from an earlier run.
-- `end_to_end.environment` is the constant `"substrate-tds"`.
+- `end_to_end.environment` is the selected adapter identifier.
+- The local block includes the document/test identities plus
+  `runtime_evidence` and `runtime_evidence_sha256`, and contains no TDS fields.
+- The Substrate block additionally includes the environment config, TDS
+  machine, dependency manifest, preflight, and authenticated evidence fields.
 
 Validate the object against the schema before invoking. This is the check the
 deterministic host used to perform, and you are standing in for it.
@@ -549,24 +574,16 @@ per verifier.
 
 First compare the **top-level** `result.run_id` with the `run_id` you sent.
 `run_id` is a top-level property of the result, **not** a member of
-`input_identity`: `$defs.inputIdentity` declares exactly 15 required fields with
-`additionalProperties: false`, and `run_id` is not among them. Looking for
+`input_identity`; `run_id` is not declared there. Looking for
 `input_identity.run_id` finds nothing in any schema-conforming result, so
 treating it as an identity field rejects every valid result — and a result that
 did carry it would be schema-invalid.
 
-Then require exact equality of **all 15** `input_identity` fields against the
-request you sent — `artifact_root`, `workspace_root`, `code`, `source_manifest`,
-`source_sha256`, `document`, `document_sha256`, `tests_manifest`,
-`tests_manifest_sha256`, `environment`, `tds_machine`, `dependency_manifest`,
-`dependency_manifest_sha256`, `preflight_result`, and
-`preflight_result_sha256` (plus any optional receipt or runtime-evidence hashes
-the request carried). Checking only the code and source hash lets a result that
-judged a different document, test manifest, dependency set, preflight receipt,
-or TDS machine pass as identical. A mismatch in **any** field means the verdict
-describes a different input set than you submitted: record `blocked` with
-`invalid-verifier-result`. Do not reconcile it, and do not retry —
-per that agent's contract, a retry needs a fresh request.
+Then require exact equality of every `input_identity` field against the request:
+the common Rust/document/test identity plus every adapter field actually
+supplied. Do not require TDS fields for `local` or another non-TDS environment.
+A mismatch means the verdict describes a different input set: record `blocked`
+with `invalid-verifier-result`. Do not reconcile it or retry.
 
 Fold the aggregate into your verdict: `fail` fails the run; `blocked` blocks
 stage 6; `pass` is required for a run-level `pass`.

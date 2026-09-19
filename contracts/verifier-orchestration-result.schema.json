@@ -279,12 +279,7 @@
         "document_sha256",
         "tests_manifest",
         "tests_manifest_sha256",
-        "environment",
-        "tds_machine",
-        "dependency_manifest",
-        "dependency_manifest_sha256",
-        "preflight_result",
-        "preflight_result_sha256"
+        "environment"
       ],
       "properties": {
         "artifact_root": {
@@ -328,7 +323,17 @@
           "$ref": "#/$defs/sha256"
         },
         "environment": {
-          "const": "substrate-tds"
+          "$ref": "#/$defs/identifier"
+        },
+        "environment_config": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment_config_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment_target": {
+          "$ref": "#/$defs/identifier"
         },
         "tds_machine": {
           "$ref": "#/$defs/identifier",
@@ -379,15 +384,29 @@
         "tool_validation_receipt_sha256": [
           "tool_validation_receipt"
         ],
+        "environment_config": [
+          "environment_config_sha256"
+        ],
+        "environment_config_sha256": [
+          "environment_config"
+        ],
+        "dependency_manifest": [
+          "dependency_manifest_sha256"
+        ],
+        "dependency_manifest_sha256": [
+          "dependency_manifest"
+        ],
+        "preflight_result": [
+          "preflight_result_sha256"
+        ],
+        "preflight_result_sha256": [
+          "preflight_result"
+        ],
         "runtime_evidence": [
-          "runtime_evidence_sha256",
-          "runtime_evidence_validation_receipt",
-          "runtime_evidence_validation_receipt_sha256"
+          "runtime_evidence_sha256"
         ],
         "runtime_evidence_sha256": [
-          "runtime_evidence",
-          "runtime_evidence_validation_receipt",
-          "runtime_evidence_validation_receipt_sha256"
+          "runtime_evidence"
         ],
         "runtime_evidence_validation_receipt": [
           "runtime_evidence",
@@ -399,7 +418,43 @@
           "runtime_evidence_sha256",
           "runtime_evidence_validation_receipt"
         ]
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "environment": {
+                "const": "substrate-tds"
+              }
+            },
+            "required": [
+              "environment"
+            ]
+          },
+          "then": {
+            "required": [
+              "environment_config",
+              "environment_config_sha256",
+              "tds_machine",
+              "dependency_manifest",
+              "dependency_manifest_sha256",
+              "preflight_result",
+              "preflight_result_sha256"
+            ],
+            "dependentRequired": {
+              "runtime_evidence": [
+                "runtime_evidence_validation_receipt",
+                "runtime_evidence_validation_receipt_sha256"
+              ]
+            }
+          },
+          "else": {
+            "properties": {
+              "tds_machine": false
+            }
+          }
+        }
+      ]
     },
     "gate": {
       "type": "object",
